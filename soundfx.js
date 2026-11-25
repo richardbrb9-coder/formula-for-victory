@@ -88,7 +88,7 @@ export class RaceSound {
     // s: { v, vmax, gear, rpm, gas, onKerb, onGrass, cockpit, engineOn, soundOn, rivals: [{ dist, side, closing, v, vmax }] }
     // returns how much to turn the engine down this moment (a quick dip during each gear change)
     update(dt, s) {
-        const ctx = this.ctx, t = ctx.currentTime, k = (p, v, tc = 0.06) => p.setTargetAtTime(v, t, tc);
+        const ctx = this.ctx, t = ctx.currentTime, k = (p, v, tc = 0.06) => { p.cancelScheduledValues(0); p.setTargetAtTime(v, t, tc); };   // (each call replaces the last, so they never pile up)
         const sp = Math.min(1, Math.abs(s.v) / s.vmax), loud = s.soundOn ? 1 : 0, eng = s.soundOn && s.engineOn ? 1 : 0;
         // gear changes: up a gear with your foot down = a quick cut and a pop; lifting off from high revs = crackles
         // (not too often: at most one pop a gear change, and crackles no more than every 1.5 seconds)

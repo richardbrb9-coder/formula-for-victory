@@ -52,7 +52,7 @@ export function buildTrackData(C) {
         let k = E.findIndex(e => e[0] > d); if (k < 0) k = E.length;
         const a = E[(k - 1 + E.length) % E.length], b = E[k % E.length];
         const span = ((b[0] - a[0]) % trackLen + trackLen) % trackLen || trackLen, t = (((d - a[0]) % trackLen + trackLen) % trackLen) / span;
-        return a[1] + (b[1] - a[1]) * (t * t * (3 - 2 * t));
+        return a[1] + (b[1] - a[1]) * t;
     };
     const pts = []; let seg = 0;
     for (let i = 0; i < N; i++) {
@@ -60,6 +60,9 @@ export function buildTrackData(C) {
         const a = fine[seg], b = fine[(seg + 1) % F], t = (d - cum[seg]) / ((cum[seg + 1] - cum[seg]) || 1);
         pts.push(new THREE.Vector3(a[0] + (b[0] - a[0]) * t, heightAt(d), a[1] + (b[1] - a[1]) * t));
     }
+    // a hilly circuit's heights are joined by straight slopes, then rounded off (twice over about 50 m), so the road
+    // rolls over its crests and dips with no sudden change of slope
+    if (E) for (let pass = 0; pass < 2; pass++) { const R = 12, y = pts.map(p => p.y); pts.forEach((p, i) => { let sum = 0; for (let j = -R; j <= R; j++) sum += y[(i + j + N) % N]; p.y = sum / (2 * R + 1); }); }
     const samples = pts.map((p, i) => {
         const nx = pts[(i + 1) % N], pv = pts[(i - 1 + N) % N];
         const t = new THREE.Vector3(nx.x - pv.x, 0, nx.z - pv.z).normalize();
@@ -87,11 +90,15 @@ export function buildTrackData(C) {
             }
         }
         s.wl = s.hw + s.L.w; s.wr = s.hw + s.R.w;        // how far each wall is from the middle of the road
+        s.tunnel = 0; for (const [from, to] of C.tunnels || []) s.tunnel = Math.max(s.tunnel, zoneFactor(s.d, from + 30, to - 40, trackLen, 40));   // how far inside a tunnel (0 outside, 1 well inside)
+        s.roofed = (C.tunnels || []).some(([from, to]) => zoneFactor(s.d, from, to, trackLen, 1) > 0);
         s.line = Math.sign(k2[i]) * Math.min(s.hw * 0.6, Math.abs(k2[i]) * 900);   // the racing line: towards the inside of each corner
     });
     // kerbs: on every corner, sloping down into the ground at each end
     const on = i => Math.abs(samples[(i % N + N) % N].ks) >= KERB_KS;
     samples.forEach((s, i) => { let r = 0; if (on(i)) { r = 1; if (!on(i - 1) || !on(i + 1)) r = 0; else if (!on(i - 2) || !on(i + 2)) r = 0.5; } s.kerb = r; });
+    // (a street circuit's walls stand right at the edge of the road: where there is no room for a kerb, there isn't one)
+    samples.forEach(s => { s.kerbL = s.L.w >= KERB_W + 0.3; s.kerbR = s.R.w >= KERB_W + 0.3; });
 
     const fAt = d => ((d / trackLen * N) % N + N) % N;
     const T = {
@@ -130,7 +137,7 @@ export function buildTrackData(C) {
 //  2. THE ROAD IN 3D
 // =====================================================================
 // collects triangles for one mesh
-class Geo {
+export class Geo {
     constructor(colours = 0) { this.pos = []; this.uv = []; this.idx = []; this.col = colours ? [] : null; this.cs = colours; }
     get count() { return this.pos.length / 3; }
     quadRow(prev, cur, n, flip) {   // join two rows of n points
@@ -148,7 +155,7 @@ class Geo {
 }
 // Push a shape (points across: [metres out to the left of the middle of the road, height above it]) along part of the track.
 // prof(s, i) gives the points at each sample (or null for a gap). Faces point up when the points run from left to right.
-function sweep(T, geo, i0, i1, step, prof, uv, flip = false) {
+export function sweep(T, geo, i0, i1, step, prof, uv, flip = false) {
     let prev = -1, n = 0;
     for (let i = i0; i <= i1; i += step) {
         const s = T.samples[i % T.N], pr = prof(s, i);
@@ -219,7 +226,7 @@ export function buildTrackMeshes(T, GRID) {
         add(marks.mesh(marksMat, { renderOrder: 1, name: 'roadMarks' }), 420);
         // kerbs on both sides of the corners
         const kerb = new Geo();
-        for (const side of [1, -1]) sweep(T, kerb, i0, i1, 1, s => Math.abs(s.ks) >= KERB_KS ? kerbProf.map(([off, h]) => [side * (s.hw + off), 0.02 + (h - 0.02) * s.kerb]) : null,
+        for (const side of [1, -1]) sweep(T, kerb, i0, i1, 1, s => Math.abs(s.ks) >= KERB_KS && (side > 0 ? s.kerbL : s.kerbR) ? kerbProf.map(([off, h]) => [side * (s.hw + off), 0.02 + (h - 0.02) * s.kerb]) : null,
             (q, d) => [q / (kerbProf.length - 1), d / 3], side > 0);
         add(kerb.mesh(kerbMat, { receiveShadow: true, name: 'kerbs' }), 900);
         // run-off areas: gravel traps and asphalt aprons between the road and the wall (grass needs nothing: it's the ground)

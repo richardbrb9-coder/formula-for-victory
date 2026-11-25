@@ -3,7 +3,7 @@
 // this is for children. The falling rain and snow live in a box that follows the camera, so a few thousand drops look endless.
 import * as THREE from './lib/three.module.min.js';
 
-export const WEATHERS = { sunny: 'Sunny', rain: 'Rain', snow: 'Snow' };
+export const WEATHERS = { sunny: 'Sunny', cloudy: 'Grey skies', rain: 'Rain', snow: 'Snow' };
 
 function dotTexture() {
     const c = document.createElement('canvas'); c.width = c.height = 32; const x = c.getContext('2d');
@@ -88,6 +88,11 @@ export function weatherLook(t, kind) {
     if (kind === 'sunny') return t;
     const night = t.time === 'night', sunset = t.time === 'sunset';
     const o = { ...t, weather: kind, light: { ...t.light } };
+    if (kind === 'cloudy') {   // a grey, overcast day: flat soft light, no rain
+        Object.assign(o, night ? { top: 0x0a0d13, horizon: 0x232a36 } : sunset ? { top: 0x4a505e, horizon: 0xa3958c } : { top: 0x8a94a0, horizon: 0xc2c9d0 });
+        o.clouds = 1; o.stars = 0; o.fog = [t.fog[0] * 0.8, t.fog[1] * 0.75];
+        o.light.sun *= 0.5; o.light.hemi *= 1.2; o.light.env *= 0.85;
+    }
     if (kind === 'rain') {
         Object.assign(o, night ? { top: 0x07090d, horizon: 0x1c222b } : sunset ? { top: 0x3d434f, horizon: 0x8a7f78 } : { top: 0x6e7782, horizon: 0xa9b1ba });
         o.clouds = 1; o.stars = 0; o.fog = [t.fog[0] * 0.45, t.fog[1] * 0.42];

@@ -51,7 +51,7 @@ export class Effects {
     puff(x, z, kind, vx = 0, vz = 0) {
         if (!this.enabled) return;
         const p = this.puffs[this.puffIdx = (this.puffIdx + 1) % this.puffs.length];
-        p.s.position.set(x, 0.4, z); p.s.visible = true;
+        p.s.position.set(x, (this.baseY || 0) + 0.4, z); p.s.visible = true;
         p.s.material.color.set({ dust: 0xb59a6a, spray: 0xc3cad3, powder: 0xffffff }[kind] || 0xe6e8ec);
         p.life = 0; p.max = { dust: 1.1, spray: 0.55, powder: 0.8 }[kind] || 0.9; p.grow = { dust: 3.5, spray: 3.2, powder: 3.0 }[kind] || 2.6;
         p.vx = vx * 0.2 + (Math.random() - 0.5); p.vy = 0.6 + Math.random() * 0.5; p.vz = vz * 0.2 + (Math.random() - 0.5);

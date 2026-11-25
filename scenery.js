@@ -28,7 +28,11 @@ export const THEMES = {
     city:   { top: 0x4f86c6, horizon: 0xd4dde6, sun: [-0.5, 0.5, -0.7],   fog: [180, 900],  ground: 0x4a4f57, hills: 0x8a95a3 },
     forest: { top: 0x3a86d8, horizon: 0xcfe6f5, sun: [0.6, 0.38, 0.7],    fog: [280, 1700], ground: 0x3f7a35, hills: 0x4d6e55 },
     // a royal park on a wide plain: tall trees all round, soft haze, mountains far away
-    park:   { top: 0x3a86d8, horizon: 0xd2e6f2, sun: [-0.62, 0.5, 0.45],  fog: [260, 1500], ground: 0x3f7a35, hills: 0x7f93a8 }
+    park:   { top: 0x3a86d8, horizon: 0xd2e6f2, sun: [-0.62, 0.5, 0.45],  fog: [260, 1500], ground: 0x3f7a35, hills: 0x7f93a8 },
+    // an old airfield on a plateau: wide and open, big skies, low wooded country far away
+    airfield: { top: 0x4a8ad0, horizon: 0xd6e4ee, sun: [0.5, 0.52, 0.62], fog: [320, 1800], ground: 0x4f8a3c, hills: 0x6f8a78 },
+    // a harbour town on a steep coast: bright light off the sea, pale buildings, mountains close behind
+    riviera:  { top: 0x2a7ad8, horizon: 0xcfe6f6, sun: [0.42, 0.6, 0.55], fog: [240, 1400], ground: 0x8a8478, hills: 0x8d9a8f }
 };
 // Time of day changes the colours, sun height and light strength of any theme
 export const TIMES = { day: 'Day', sunset: 'Sunset', night: 'Night' };
@@ -238,7 +242,7 @@ function grassTexture(base) {
 // Put an object beside the track facing the road. lateral > 0 and < 0 are the two sides.
 export function placeBeside(ctx, obj, d, lateral) {
     const p = ctx.pathAt(d, lateral, 0);
-    obj.position.set(p.x, 0, p.z);
+    obj.position.set(p.x, p.y, p.z);                            // (standing at the road's own height)
     obj.rotation.y = p.heading + (lateral > 0 ? Math.PI : 0);   // local -z then faces the road
     ctx.group.add(obj);
     return obj;
@@ -293,7 +297,9 @@ export const TREE_MIX = {
     forest: [['fir_a', 0.3], ['fir_b', 0.28], ['round', 0.12], ['slim', 0.14], ['bush_a', 0.08], ['bush_b', 0.08]],
     coast:  [['round', 0.36], ['slim', 0.16], ['fir_b', 0.08], ['bush_a', 0.22], ['bush_b', 0.18]],
     city:   [['round', 0.55], ['slim', 0.45]],
-    park:   [['slim', 0.55], ['round', 0.35], ['bush_a', 0.1]]
+    park:   [['slim', 0.55], ['round', 0.35], ['bush_a', 0.1]],
+    airfield: [['round', 0.6], ['slim', 0.25], ['bush_a', 0.15]],
+    hedge:  [['bush_a', 1]]
 };
 const treeMats = {};
 let treeTint = new THREE.Color(1, 1, 1);
@@ -345,9 +351,9 @@ export function plantTrees(ctx, spots, mix, shadowsToo = true) {
         const T = TREE_TYPES[name], mesh = new THREE.InstancedMesh(plane, treeMaterial(name), list.length);
         list.forEach((sp, i) => {
             const S = T.frame * T.grow * sp.size;
-            m.makeScale(S, S, S).setPosition(sp.x, -T.bottom * T.grow * sp.size - S * 0.025, sp.z); mesh.setMatrixAt(i, m);   // (sunk a touch, so the roots are in the ground)
+            m.makeScale(S, S, S).setPosition(sp.x, (sp.y || 0) - T.bottom * T.grow * sp.size - S * 0.025, sp.z); mesh.setMatrixAt(i, m);   // (sunk a touch, so the roots are in the ground)
             mesh.setColorAt(i, col.setHSL(0.28, 0.1, rand(0.42, 0.55)).multiplyScalar(1.9));   // a little variety in shade
-            if (sp.shadow !== false) shadows.push([sp.x, sp.z, S * (name.startsWith('fir') ? 0.32 : 0.42)]);
+            if (sp.shadow !== false) shadows.push([sp.x, sp.z, S * (name.startsWith('fir') ? 0.32 : 0.42), sp.y || 0]);
         });
         mesh.computeBoundingSphere(); mesh.raycast = () => {}; ctx.group.add(mesh);
     }
@@ -355,7 +361,7 @@ export function plantTrees(ctx, spots, mix, shadowsToo = true) {
     // a soft shadow on the ground under each tree
     const sg = new THREE.PlaneGeometry(1, 1); sg.rotateX(-Math.PI / 2);
     const sh = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ map: treeShadowTex(), transparent: true, depthWrite: false, toneMapped: false }), shadows.length);
-    shadows.forEach(([x, z, r], i) => { m.makeScale(r * 2, 1, r * 2).setPosition(x, 0.02, z); sh.setMatrixAt(i, m); });
+    shadows.forEach(([x, z, r, y], i) => { m.makeScale(r * 2, 1, r * 2).setPosition(x, y + 0.02, z); sh.setMatrixAt(i, m); });
     sh.computeBoundingSphere(); sh.raycast = () => {}; sh.userData.treeShadows = true; ctx.group.add(sh);
 }
 function trees(ctx, count, minGap = 8, area = null) {
@@ -579,7 +585,7 @@ export function tyreMarks(ctx) {
         const d0 = samples[ci].d - 40, steps = 40, base = pos.length / 3;
         for (let k = 0; k <= steps; k++) {
             const d = d0 + k * 2, a = pathAt(d, tyre - 0.15, 0.9), b = pathAt(d, tyre + 0.15, 0.9);
-            pos.push(a.x, 0.03, a.z, b.x, 0.03, b.z);
+            pos.push(a.x, a.y + 0.03, a.z, b.x, b.y + 0.03, b.z);
             if (k < steps) { const q = base + k * 2; idx.push(q, q + 1, q + 2, q + 1, q + 3, q + 2); }
         }
     }

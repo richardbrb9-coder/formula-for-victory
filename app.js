@@ -158,7 +158,7 @@ function renderSetup() {
                 <p class="b-label">Rivals</p>
                 ${row('difficulty', [['easy', 'Easy ' + medalFor('easy')], ['medium', 'Medium ' + medalFor('medium')], ['hard', 'Hard ' + medalFor('hard')]])}
                 <p class="b-label">Weather (looks only: the car grips just the same)</p>
-                ${row('weather', [['sunny', '☀️ Sunny'], ['rain', '🌧️ Rain']])}
+                ${row('weather', [['sunny', '☀️ Sunny'], ['cloudy', '☁️ Grey skies'], ['rain', '🌧️ Rain']])}
                 <p class="b-label">Graphics</p>
                 ${row('quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']])}
                 <div class="mode-btns"><button class="big-btn" data-go="race">🏁 Race</button><button class="big-btn alt" data-go="trial">⏱ Time trial</button></div>

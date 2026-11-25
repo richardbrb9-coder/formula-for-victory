@@ -43,7 +43,7 @@ function buildTrack(scene) {
         made.lod.push({ o, c: ball.center.clone(), far: Math.min(o.userData.far || 1e9, hazeEnd) + ball.radius });
     }
     scene.add(group);
-    return { lightMats: made.lightMats, group, trees: ctx.treeCount || 0, lod: made.lod, noProbe: group.children.filter(o => o.userData.noProbe), update: dt => { made.update(camera.position); extra.update(dt); } };
+    return { lightMats: made.lightMats, group, trees: ctx.treeCount || 0, lod: made.lod, noProbe: group.children.filter(o => o.userData.noProbe), update: dt => { made.update(camera.position); extra.update(dt, { tunnel: tunnelNow, cam: camera.position }); } };
 }
 
 // =====================================================================
@@ -231,7 +231,7 @@ function updateReflections() {
 // where the sun is in the picture, and how strongly its lens flare shows (sunny days and sunsets only)
 const sunTmp = new THREE.Vector3(), sunUV = new THREE.Vector2(), SUN_SUNSET = new THREE.Color(1, 0.62, 0.32), SUN_DAY = new THREE.Color(1, 0.93, 0.8);
 function sunOnScreen() {
-    if (!sun || !sun.userData.dir || weatherKind !== 'sunny' || timeOfDay === 'night') return null;
+    if (!sun || !sun.userData.dir || weatherKind !== 'sunny' || timeOfDay === 'night' || tunnelNow > 0.2) return null;
     sunTmp.copy(sun.userData.dir).multiplyScalar(1000).add(camera.position).project(camera);
     if (sunTmp.z > 1 || Math.abs(sunTmp.x) > 1.3 || Math.abs(sunTmp.y) > 1.3) return null;
     const edge = Math.max(Math.abs(sunTmp.x), Math.abs(sunTmp.y)), vis = Math.max(0, Math.min(1, (1.3 - edge) / 0.4)) * (timeOfDay === 'sunset' ? 1 : 0.8);
@@ -370,7 +370,7 @@ function drivePlayer(dt) {
         steerIn = r.botSteer; gas = true; brake = false;
     }
     if (window.__autopilot) {                 // test driver: follow the racing line like a rival
-        const here = samples[r.idx].d, tgt = sampleAt(here + 14 + r.v * 0.3), off = tgt.line * 0.9;
+        const here = samples[r.idx].d, tgt = sampleAt(here + (TRACK.tightWalls ? 7 + r.v * 0.16 : 14 + r.v * 0.3)), off = tgt.line * (TRACK.tightWalls ? 0.5 : 0.9);   // (between close walls: look less far ahead, cut the corners less)
         const tx = tgt.p.x + tgt.n.x * off, tz = tgt.p.z + tgt.n.z * off;
         let want = Math.atan2(-(tz - r.z), tx - r.x) - r.heading; while (want > Math.PI) want -= Math.PI * 2; while (want < -Math.PI) want += Math.PI * 2;
         steerIn = Math.max(-1, Math.min(1, want * 3));
@@ -383,11 +383,11 @@ function drivePlayer(dt) {
     if (help && !window.__autopilot && go) {
         // driving help 1: ease off before a corner you're going too fast for
         const here = samples[r.idx].d; let target = P.vmax;
-        for (let ahead = 0, far = r.v * r.v / (2 * P.brake * 0.6) + 30; ahead <= far; ahead += 8) { const k = Math.abs(sampleAt(here + ahead).ks); const vc = k > 1e-4 ? Math.sqrt(playerGrip * 0.9 / k) : P.vmax; target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.6 * ahead)); }
+        for (let ahead = 0, far = r.v * r.v / (2 * P.brake * 0.6) + 30; ahead <= far; ahead += 8) { const k = Math.abs(sampleAt(here + ahead).ks); const vc = k > 1e-4 ? Math.sqrt(playerGrip * (TRACK.tightWalls ? 0.76 : 0.9) / k) : P.vmax; target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.6 * ahead)); }   // (a little more careful between close walls)
         if (r.v > target + 1) { gas = false; r.v -= P.brake * 0.75 * dt; }
-        // driving help 2: a gentle nudge back towards the road near the edge
-        const edge = s.hw - 1.5;
-        if (Math.abs(lat) > edge) steerIn -= Math.sign(lat) * 0.45 * Math.min(1, (Math.abs(lat) - edge) / 3);
+        // driving help 2: a gentle nudge back towards the road near the edge (sooner and firmer where the edge is a wall)
+        const edge = s.hw - (TRACK.tightWalls ? 2.1 : 1.5);
+        if (Math.abs(lat) > edge) steerIn -= Math.sign(lat) * (TRACK.tightWalls ? 0.7 : 0.45) * Math.min(1, (Math.abs(lat) - edge) / (TRACK.tightWalls ? 2 : 3));
         steerIn = Math.max(-1, Math.min(1, steerIn));
     }
     const maxSteer = 0.62 / (1 + r.v / 30);
@@ -448,7 +448,7 @@ function drivePlayer(dt) {
         if (r.v > 8) {
             bump(0.35); jolt(r, Math.min(0.6, r.v / 60));
             const sg = Math.sign(lat2);   // sparks where the car scrapes the barrier
-            efx.sparksAt(r.x + s2.n.x * sg * 1.0, 0.4, r.z + s2.n.z * sg * 1.0, Math.cos(r.heading), -Math.sin(r.heading), Math.min(40, 8 + r.v));
+            efx.sparksAt(r.x + s2.n.x * sg * 1.0, r.y + 0.4, r.z + s2.n.z * sg * 1.0, Math.cos(r.heading), -Math.sin(r.heading), Math.min(40, 8 + r.v));
             efx.bump(Math.min(0.8, r.v / 60));
             carHit(r, s2.n.x * sg, s2.n.z * sg, Math.min(0.7, r.v / 60), null, r.v < 30);   // a scuff from the barrier (a hard hit can leave a dent)
         }
@@ -467,6 +467,23 @@ function driveRival(r, dt) {
         const vc = k > 1e-4 ? Math.sqrt(P.grip * 0.92 / k) : P.vmax;
         target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.8 * ahead));
     }
+    // On a street circuit there is no room to barge through: a rival slows for the car in front of it, and when it comes
+    // up behind you it waits its turn, then goes round you on whichever side has room.
+    let dodge = null;
+    if (TRACK.tightWalls) {
+        for (const o of rivals) {
+            if (o === r) continue;
+            const gap = (((o.d - r.d) % trackLen) + trackLen) % trackLen;
+            if (gap > 0.01 && gap < 18 && Math.abs(o.lat - r.lat) < 2.6) target = Math.min(target, o.v + Math.max(-5, (gap - 7.5 - 40 * Math.abs(samples[r.idx].ks)) * 1.2));   // (a longer gap round a tight corner, where the inside line is shorter)
+        }
+        if (!race.ff) {
+            const gap = (((samples[player.idx].d - r.d) % trackLen) + trackLen) % trackLen;
+            if (gap < 22 && player.v < r.v + 4) {
+                dodge = player.lastLat;
+                if (gap > 0.5 && Math.abs(player.lastLat - r.lat) < 2.6) target = Math.min(target, Math.max(0, player.v) + Math.max(-5, (gap - 8) * 1.2));
+            }
+        }
+    }
     let a = 0;
     if (go) a = r.v < target ? P.a0 * Math.max(0.1, 1 - (r.v / P.vmax) ** 2) : -P.brake * Math.min(1, (r.v - target) / 3);
     a -= 0.25;
@@ -474,7 +491,8 @@ function driveRival(r, dt) {
     r.d += r.v * dt;
     // follow the racing line like a real driver: the car can only move sideways gradually (faster when going faster),
     // easing in and out of each move, so it never darts across the road
-    const hwR = sampleAt(r.d + r.v * 0.4).hw, latTarget = Math.max(-hwR + 1.3, Math.min(hwR - 1.3, lineAt(r.d + r.v * 0.4) * 0.9 + r.lineOffset));
+    const hwR = sampleAt(r.d + r.v * 0.4).hw; let latTarget = Math.max(-hwR + 1.3, Math.min(hwR - 1.3, lineAt(r.d + r.v * 0.4) * 0.9 + r.lineOffset));
+    if (dodge != null) { let side = r.lat >= dodge ? 1 : -1; if (Math.abs(dodge + side * 2.9) > hwR - 1.2) side = -side; latTarget = Math.max(-hwR + 1.2, Math.min(hwR - 1.2, dodge + side * 2.9)); }
     const maxLatV = Math.min(4.5, r.v * 0.09), wantV = Math.max(-maxLatV, Math.min(maxLatV, (latTarget - r.lat) * 1.2));
     r.latV += Math.max(-5 * dt, Math.min(5 * dt, wantV - r.latV));
     r.lat += r.latV * dt;
@@ -507,7 +525,7 @@ function collisions() {
         const a = all[i], b = all[j], dx = b.x - a.x, dz = b.z - a.z, dist = Math.hypot(dx, dz), min = 2.6;
         if (dist < min && dist > 0.01 && Math.abs(a.y - b.y) < 2) {   // (not a car on a bridge above another)
             const push = (min - dist) / 2, nx = dx / dist, nz = dz / dist;
-            if (a.isPlayer) { a.x -= nx * push * 2; a.z -= nz * push * 2; a.v *= 0.97; if (Math.abs(a.v - b.v) > 4) { bump(0.2); jolt(a, 0.25); efx.sparksAt((a.x + b.x) / 2, 0.5, (a.z + b.z) / 2, -nx, -nz, 14); } crash(a, b, nx, nz, Math.abs(a.v - b.v)); }
+            if (a.isPlayer) { a.x -= nx * push * 2; a.z -= nz * push * 2; a.v *= 0.97; if (Math.abs(a.v - b.v) > 4) { bump(0.2); jolt(a, 0.25); efx.sparksAt((a.x + b.x) / 2, a.y + 0.5, (a.z + b.z) / 2, -nx, -nz, 14); } crash(a, b, nx, nz, Math.abs(a.v - b.v)); }
             else if (b.isPlayer) { b.x += nx * push * 2; b.z += nz * push * 2; b.v *= 0.97; crash(a, b, nx, nz, Math.abs(a.v - b.v)); }
             else { a.v *= 0.995; if (dist < 2.1) crash(a, b, nx, nz, Math.min(5, Math.abs(a.v - b.v) * 0.5)); }   // (rivals only mark each other when really close, and never hard enough to lose a part)
         }
@@ -536,6 +554,7 @@ function updateCars(dt) {
         const sy = samples[r.idx]; r.y = sy.p.y + sy.slope * ((r.x - sy.p.x) * sy.t.x + (r.z - sy.p.z) * sy.t.z);   // the road's height here
         r.holder.position.set(r.x, r.y, r.z);
         r.holder.rotation.y = r.heading;
+        r.holder.rotation.z = sy.slope ? Math.atan(sy.slope * Math.cos(r.heading - sy.heading)) : 0;   // nose up on a climb, down on a descent
         if (!r.isPlayer && camera) {
             // rivals far up the road aren't drawn, and only those close by are drawn in full detail (with a margin, so a
             // car just at the edge doesn't keep swapping)
@@ -557,7 +576,7 @@ function roadHeight(wx, wz, r) {
     const s = samples[r.idx], dx = wx - s.p.x, dz = wz - s.p.z, lat = Math.abs(dx * s.n.x + dz * s.n.z), d = s.d + dx * s.t.x + dz * s.t.z, HW = s.hw;
     if (lat < HW) return 0.003 + 0.003 * Math.sin(d * 0.9) * Math.sin(lat * 0.7 + d * 0.37);
     if (lat < HW + KERB_W) {
-        if (Math.abs(s.ks) < KERB_KS) return 0;
+        if (Math.abs(s.ks) < KERB_KS || !(dx * s.n.x + dz * s.n.z > 0 ? s.kerbL : s.kerbR)) return 0;
         return kerbHeight(lat - HW, d);   // the kerb's sloped edge and ridged top: a quick rumble
     }
     return 0.008 + 0.008 * (Math.sin(d * 1.7 + lat * 2.3) * 0.6 + Math.sin(d * 4.1 - lat * 1.1) * 0.4);   // grass: a gentle jiggle
@@ -596,8 +615,8 @@ function updateGhost() {
     if (ghost.lapT0 == null) { ghost.holder.visible = false; return; }
     const t = race.raceTime - ghost.lapT0, i = Math.floor(t / 0.05);
     if (i >= ghost.frames.length) { ghost.holder.visible = false; return; }
-    const [x, z, h] = ghost.frames[i];
-    ghost.holder.visible = true; ghost.holder.position.set(x, 0, z); ghost.holder.rotation.y = h;
+    const [x, z, h, y = 0] = ghost.frames[i];
+    ghost.holder.visible = true; ghost.holder.position.set(x, y, z); ghost.holder.rotation.y = h;
 }
 // The finishing order of the whole field, worked out the moment you cross the line. Rivals who are still racing are
 // driven on to the finish straight away, at high speed and out of sight, by the very same driving code (in the same
@@ -670,19 +689,19 @@ function buildPodium() {
 function podiumScene() {
     if (!podium) podium = buildPodium();
     const P = race.podium, at = pathAt(PODIUM_D, 0, 0), c = Math.cos(at.heading), sn = Math.sin(at.heading);
-    podium.group.position.set(at.x, 0, at.z); podium.group.rotation.y = at.heading; podium.group.visible = true;
-    P.x = at.x; P.z = at.z; P.heading = at.heading;
+    podium.group.position.set(at.x, at.y, at.z); podium.group.rotation.y = at.heading; podium.group.visible = true;
+    P.x = at.x; P.y = at.y; P.z = at.z; P.heading = at.heading;
     for (const r of [player, ...rivals]) { r.holder.visible = false; r.v = 0; showDetail(r, true); }
     P.top.forEach((row, i) => {
         const r = row.c, [, z, h, turn] = STEPS[i];
         r.x = at.x + z * sn; r.z = at.z + z * c; r.heading = at.heading + turn; r.v = 0; r.steer = turn ? Math.sign(turn) * 0.3 : 0.22;
-        r.holder.visible = true; r.holder.position.set(r.x, h, r.z); r.holder.rotation.y = r.heading;
+        r.holder.visible = true; r.holder.position.set(r.x, at.y + h, r.z); r.holder.rotation.set(0, r.heading, 0);
         if (r.susp) { r.susp.lastV = 0; r.susp.lastH = r.heading; }
         for (const w of r.model.wheels) w.rotation.y = (w.userData.side < 0 ? Math.PI : 0) + (w.userData.front ? r.steer : 0);
     });
     if (headlight && headlight.visible) {   // at night: the headlight and the lamp glow light the podium instead
-        headlight.position.set(at.x + c * 13, 6, at.z - sn * 13); headlight.target.position.set(at.x, 0.8, at.z); headlight.target.updateMatrixWorld();
-        carGlow.position.set(at.x + c * 2, 5, at.z - sn * 2);
+        headlight.position.set(at.x + c * 13, at.y + 6, at.z - sn * 13); headlight.target.position.set(at.x, at.y + 0.8, at.z); headlight.target.updateMatrixWorld();
+        carGlow.position.set(at.x + c * 2, at.y + 5, at.z - sn * 2);
     }
     document.getElementById('race-stage').classList.add('podium-on');
     document.getElementById('race-hud').innerHTML = ''; lastHud = '';
@@ -741,11 +760,11 @@ function podiumFrame(dt) {
     // (an upright phone is narrow, so the cars are framed tightly there: the outer corners of steps 2 and 3 may be cut off, the cars never are)
     const far = Math.max((camera.aspect < 1 ? 5.1 : 5.9) / (tanV * camera.aspect * (short ? 0.72 : 1)), 3.1 / tanV), dist = far * (1.35 - 0.35 * ease) + STEP_LEN / 2;
     const a = Math.sin(P.t * 0.32) * Math.min(0.34, Math.asin(Math.min(1, (samples[0].hw - 2.5) / (far * 1.35 + STEP_LEN / 2)))), c = Math.cos(P.heading + a), sn = Math.sin(P.heading + a);   // (the camera stays over the road, inside the barriers)
-    camera.fov = fov; camera.position.set(P.x + c * dist, 2.0 + (1 - ease) * 2.5, P.z - sn * dist);
-    camera.lookAt(podiumLook.set(P.x, 0.9, P.z));
+    camera.fov = fov; camera.position.set(P.x + c * dist, P.y + 2.0 + (1 - ease) * 2.5, P.z - sn * dist);
+    camera.lookAt(podiumLook.set(P.x, P.y + 0.9, P.z));
     camera.setViewOffset(camera.aspect * 1000, 1000, short ? -140 * camera.aspect : 0, camera.aspect < 1 ? 120 : short ? 190 : 150, camera.aspect * 1000, 1000);
     camPos.copy(camera.position); camLook.copy(podiumLook);
-    followSun(P.x, P.z); world.update(dt);
+    followSun(P.x, P.z, P.y); tunnelLight(dt, 0); world.update(dt);
     if (weather) weather.update(dt, camera.position, 0, 0);
     efx.update(dt); drawConfetti(P, dt);
     drawFrame();
@@ -762,6 +781,7 @@ function buildTvCams() {
     // trackside cameras every 110 m, on alternating sides, on poles behind the barriers
     tvCams = [];
     for (let d = 40, k = 0; d < trackLen; d += 110, k++) {
+        if (sampleAt(d).roofed) continue;
         const side = k % 2 ? 1 : -1, sm = sampleAt(d), p = pathAt(d, side * ((side > 0 ? sm.wl : sm.wr) + 1.5), 0);   // just behind the barrier
         tvCams.push({ d, pos: new THREE.Vector3(p.x, p.y + 4.8 + (k % 3) * 1.6, p.z) });   // (above the catch fence)
     }
@@ -770,7 +790,7 @@ function buildTvCams() {
     tvCams = tvCams.filter(c => {
         let clear = 0;
         for (let a = 20; a <= 80; a += 15) {
-            const q = pathAt(c.d - a, 0, 0), to = new THREE.Vector3(q.x, 0.8, q.z), dist = c.pos.distanceTo(to);
+            const q = pathAt(c.d - a, 0, 0), to = new THREE.Vector3(q.x, q.y + 0.8, q.z), dist = c.pos.distanceTo(to);
             ray.set(c.pos, dir.subVectors(to, c.pos).normalize()); ray.far = dist - 1;
             if (!ray.intersectObjects(objs, true).some(h => !h.object.userData.seeThrough)) clear++;   // (the wire catch fence doesn't block the view)
         }
@@ -810,6 +830,9 @@ function replayPose(t) {
         const a = A[k], b = B[k]; if (!a || !b) return;
         c.x = a[0] + (b[0] - a[0]) * u; c.z = a[1] + (b[1] - a[1]) * u; c.heading = a[2] + wrapAngle(b[2] - a[2]) * u;
         c.steer = a[3] + (b[3] - a[3]) * u; c.v = a[4] + (b[4] - a[4]) * u;
+        // which part of the lap the car is on (for the road's height under it): near where it was, or anywhere after a jump
+        c.idx = nearestIndex(c); const p = samples[c.idx].p;
+        if ((c.x - p.x) ** 2 + (c.z - p.z) ** 2 > 900) { let bd = Infinity; for (let i = 0; i < N; i += 2) { const q = samples[i].p, dd = (c.x - q.x) ** 2 + (c.z - q.z) ** 2; if (dd < bd) { bd = dd; c.idx = i; } } }
     });
 }
 // bring back the bumps that had happened by replay time t (the tape starts a tenth of a second into the race)
@@ -832,7 +855,7 @@ function replayFrame(dt) {
     } else if (R.shotT > 5.5) nextShot(R);
     placeReplayCamera(SHOTS[R.shot % SHOTS.length], R, dt);
     [player, ...rivals].forEach(c => { c.sliding = false; c.onGrass = false; });
-    followSun(); world.update(dt); updateEffects(dt); drawMap();
+    followSun(); tunnelLight(dt); world.update(dt); updateEffects(dt); drawMap();
     document.getElementById('race-hud').innerHTML = '';
     drawFrame();
 }
@@ -844,16 +867,18 @@ function pathAtNearest(r) {
     return samples[best].d;
 }
 function placeReplayCamera(shot, R, dt) {
-    const r = player, fx = Math.cos(r.heading), fz = -Math.sin(r.heading), car = new THREE.Vector3(r.x, 0.7, r.z);
+    const r = player, fx = Math.cos(r.heading), fz = -Math.sin(r.heading), car = new THREE.Vector3(r.x, r.y + 0.7, r.z), y = r.y;
+    if (samples[r.idx].roofed && (shot === 'heli' || shot === 'trackside')) shot = 'low';   // (in a tunnel: the on-board camera)
     let pos, look = car.clone(), fov = 50;
     if (shot === 'trackside' && R.cam) { pos = R.cam.c.pos.clone(); const dist = pos.distanceTo(car); fov = Math.max(9, Math.min(45, Math.atan(5.5 / dist) * 2 * 180 / Math.PI)); }
-    else if (shot === 'heli') { const a = R.shotT * 0.12; pos = new THREE.Vector3(r.x - fx * 26 + Math.sin(a) * 12, 24, r.z - fz * 26 + Math.cos(a) * 12); fov = 42; look.addScaledVector(new THREE.Vector3(fx, 0, fz), 10); }
-    else if (shot === 'low') { pos = new THREE.Vector3(r.x - fx * 6.5 + fz * 1.4, 0.8, r.z - fz * 6.5 - fx * 1.4); look = new THREE.Vector3(r.x + fx * 5, 0.7, r.z + fz * 5); fov = 58; }
-    else if (shot === 'front') { pos = new THREE.Vector3(r.x + fx * 15 + fz * 2, 1.7, r.z + fz * 15 - fx * 2); fov = 40; }
-    else { const sd = R.side || 1; pos = new THREE.Vector3(r.x - fz * sd * 6 + fx * 1.5, 1.3, r.z + fx * sd * 6 + fz * 1.5); fov = 55; }
+    else if (shot === 'heli') { const a = R.shotT * 0.12; pos = new THREE.Vector3(r.x - fx * 26 + Math.sin(a) * 12, y + (TRACK.heliHeight || 24), r.z - fz * 26 + Math.cos(a) * 12); fov = 42; look.addScaledVector(new THREE.Vector3(fx, 0, fz), 10); }
+    else if (shot === 'low') { pos = new THREE.Vector3(r.x - fx * 6.5 + fz * 1.4, y + 0.8, r.z - fz * 6.5 - fx * 1.4); look = new THREE.Vector3(r.x + fx * 5, y + 0.7, r.z + fz * 5); fov = 58; }
+    else if (shot === 'front') { pos = new THREE.Vector3(r.x + fx * 15 + fz * 2, y + 1.7, r.z + fz * 15 - fx * 2); fov = 40; }
+    else { const sd = R.side || 1; const out = TRACK.tightWalls ? Math.max(2.6, Math.min(6, (sd > 0 ? samples[r.idx].wr : samples[r.idx].wl) - 1)) : 6; pos = new THREE.Vector3(r.x - fz * sd * out + fx * 1.5, y + 1.3, r.z + fx * sd * out + fz * 1.5); fov = 55; }
     if (!R.camPos || R.shotT < 0.02) { R.camPos = pos.clone(); R.camLook = look.clone(); }
     const k = shot === 'trackside' ? 1 : Math.min(1, dt * 5);
     R.camPos.lerp(pos, k); R.camLook.lerp(look, shot === 'trackside' ? Math.min(1, dt * 8) : Math.min(1, dt * 10));
+    if (shot !== 'trackside' && shot !== 'heli') { const keep = camPos.clone(); camPos.copy(R.camPos); keepCameraInside(); R.camPos.copy(camPos); camPos.copy(keep); }   // (never through a wall or a tunnel roof)
     camera.position.copy(R.camPos); camera.lookAt(R.camLook); camera.fov = fov; camera.updateProjectionMatrix();
     camPos.copy(camera.position); camLook.copy(R.camLook);
 }
@@ -862,6 +887,28 @@ function placeReplayCamera(shot, R, dt) {
 //  CAMERA, HUD, MINIMAP, SOUND
 // =====================================================================
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
+// The chase camera never dips into a hill, never rises through a tunnel's roof, and on a street circuit (walls and
+// buildings right at the edge of the road) never swings out through a wall on a tight corner.
+function keepCameraInside() {
+    let best = player.idx, bd = Infinity;
+    for (let j = -16; j <= 6; j++) { const i = (player.idx + j + N) % N, p = samples[i].p, dx = camPos.x - p.x, dz = camPos.z - p.z, dd = dx * dx + dz * dz; if (dd < bd) { bd = dd; best = i; } }
+    const s = samples[best];
+    if (TRACK.tightWalls) {
+        const lat = (camPos.x - s.p.x) * s.n.x + (camPos.z - s.p.z) * s.n.z, over = lat > 0 ? lat - (s.wl - 0.8) : -lat - (s.wr - 0.8);
+        if (over > 0) { camPos.x -= s.n.x * over * Math.sign(lat); camPos.z -= s.n.z * over * Math.sign(lat); }
+    }
+    if (camPos.y < s.p.y + 1.1) camPos.y = s.p.y + 1.1;
+    if (s.roofed) camPos.y = Math.min(camPos.y, s.p.y + (TRACK.tunnelHeight || 5.6) - 0.9);
+}
+// Inside a tunnel the daylight fades out (the tunnel's own lamps light its walls), and comes back as you near the far end
+let tunnelNow = 0;
+function tunnelLight(dt, f = samples[player.idx].tunnel) {
+    if (!look || (!f && !tunnelNow)) return;
+    tunnelNow += (f - tunnelNow) * Math.min(1, dt * 5); if (Math.abs(tunnelNow) < 0.004 && !f) tunnelNow = 0;
+    sun.intensity = look.light.sun * (1 - 0.94 * tunnelNow); hemi.intensity = look.light.hemi * (1 - 0.6 * tunnelNow);
+    scene.environmentIntensity = look.light.env * (1 - 0.7 * tunnelNow);
+    if (weather) weather.group.visible = tunnelNow < 0.5;
+}
 function placeCamera(snap = false, dt = 0.016) {
     const r = player, fx = Math.cos(r.heading), fz = -Math.sin(r.heading);
     const [back, up, ahead] = camMode === 0 ? [8.2, 3.1, 7] : [5.4, 1.9, 8];
@@ -869,6 +916,7 @@ function placeCamera(snap = false, dt = 0.016) {
     const look = new THREE.Vector3(r.x + fx * ahead, r.y + 0.8, r.z + fz * ahead);
     if (snap) { camPos.copy(want); camLook.copy(look); }
     else { const k = Math.min(1, dt * 6); camPos.lerp(want, k); camLook.lerp(look, Math.min(1, dt * 10)); }
+    keepCameraInside();
     if (camMode >= 2 && !window.__camAt && !window.__aerial && !window.__camRel && !window.__camSun) {
         // bonnet and cockpit: fixed to the car, looking down the road (the cockpit view glances a little into corners)
         const ck = r.cockpit, eye = (camMode === 3 ? ck.eye : ck.bonnet).clone();
@@ -884,10 +932,10 @@ function placeCamera(snap = false, dt = 0.016) {
         camPos.copy(camera.position); camLook.copy(ahead);
         return;
     }
-    if (window.__camAt) { const c = window.__camAt, a = pathAt(c.d, c.lat, 0), b = pathAt(c.d2, c.lat2, 0); camPos.set(a.x, c.h, a.z); camLook.set(b.x, c.h2, b.z); }   // testing only
-    else if (window.__camRel) { const [cx, cy, cz, lx = 0, ly = 0.4, lz = 0] = window.__camRel, c = Math.cos(r.heading), sn = Math.sin(r.heading); camPos.set(r.x + cx * c + cz * sn, cy, r.z - cx * sn + cz * c); camLook.set(r.x + lx * c + lz * sn, ly, r.z - lx * sn + lz * c); }   // testing only: a camera fixed beside the car
-    else if (window.__camSun) { const d = sun.userData.dir; camPos.set(r.x - Math.cos(r.heading) * 7, 2.2, r.z + Math.sin(r.heading) * 7); camLook.set(camPos.x + d.x * 50 + window.__camSun * 20, camPos.y + d.y * 50 - 12, camPos.z + d.z * 50); }   // testing only: look towards the sun
-    else if (window.__aerial) { camPos.set(r.x + window.__aerial * 0.6, window.__aerial, r.z + window.__aerial * 0.6); camLook.set(r.x, 0, r.z); }   // testing only
+    if (window.__camAt) { const c = window.__camAt, a = pathAt(c.d, c.lat, 0), b = pathAt(c.d2, c.lat2, 0); camPos.set(a.x, a.y + c.h, a.z); camLook.set(b.x, b.y + c.h2, b.z); }   // testing only
+    else if (window.__camRel) { const [cx, cy, cz, lx = 0, ly = 0.4, lz = 0] = window.__camRel, c = Math.cos(r.heading), sn = Math.sin(r.heading); camPos.set(r.x + cx * c + cz * sn, r.y + cy, r.z - cx * sn + cz * c); camLook.set(r.x + lx * c + lz * sn, r.y + ly, r.z - lx * sn + lz * c); }   // testing only: a camera fixed beside the car
+    else if (window.__camSun) { const d = sun.userData.dir; camPos.set(r.x - Math.cos(r.heading) * 7, r.y + 2.2, r.z + Math.sin(r.heading) * 7); camLook.set(camPos.x + d.x * 50 + window.__camSun * 20, camPos.y + d.y * 50 - 12, camPos.z + d.z * 50); }   // testing only: look towards the sun
+    else if (window.__aerial) { camPos.set(r.x + window.__aerial * 0.6, r.y + window.__aerial, r.z + window.__aerial * 0.6); camLook.set(r.x, r.y, r.z); }   // testing only
     camera.position.copy(camPos);
     if (efx) { const [sx, sy] = efx.shakeOffset(r.v / r.perf.vmax, elapsed); camera.position.x += sx; camera.position.y += sy; }
     camera.lookAt(camLook);
@@ -999,8 +1047,9 @@ function startEngine() {
     const presence = ctx.createBiquadFilter(); presence.type = 'highpass'; presence.frequency.value = 380; const pg = ctx.createGain(); pg.gain.value = 1.8;
     presence.connect(pg); pg.connect(master);
     engine = { ctx, ev, master, kind, presence, muffle };
-    // gear changes, pops and crackles, turbo, wind, kerbs, the rivals' engines, the city echo (see soundfx.js)
-    try { engine.fx = new RaceSound(ctx, master, { city: false, turbo: true, ev, post: muffle, presence }); } catch (e) { engine.fx = null; }
+    // gear changes, pops and crackles, turbo, wind, kerbs, the rivals' engines, and on a street circuit the echo off the
+    // buildings (see soundfx.js)
+    try { engine.fx = new RaceSound(ctx, master, { city: !!TRACK.tightWalls, turbo: true, ev, post: muffle, presence }); } catch (e) { engine.fx = null; }
     // the made-up tones (used for electric cars, and until the recordings have loaded)
     const o1 = ctx.createOscillator(), o2 = ctx.createOscillator(), f = ctx.createBiquadFilter(), g = ctx.createGain();
     o1.type = ev ? 'sine' : 'sawtooth'; o2.type = ev ? 'triangle' : 'square';
@@ -1027,6 +1076,9 @@ function startRoar() {
     const ctx = engine.ctx, s = ctx.createBufferSource(), g = ctx.createGain(); s.buffer = soundBufs.roar; g.gain.value = 0.32; s.playbackRate.value = engine.kind === 'v8' ? 0.85 : 1;
     s.connect(g); g.connect(engine.master); s.start();
 }
+// Slide a sound setting towards a new value. Each call replaces the one before: the browser otherwise keeps every
+// one ever asked for, and after a few minutes' racing was spending more time on the sound than on the picture.
+const glide = (param, value, t, tc) => { param.cancelScheduledValues(0); param.setTargetAtTime(value, t, tc); };
 function updateEngine() {
     if (!engine) return;
     const v = Math.abs(player.v), vmax = player.perf.vmax, t = engine.ctx.currentTime;
@@ -1042,21 +1094,22 @@ function updateEngine() {
         const onKerb = !!(player.susp && Math.max(...player.susp.bumps) > 0.025);
         cut = engine.fx.update(0, { v: player.v, vmax, gear: gs.gear, rpm, gas: !!player.throttle, onKerb, onGrass: !!player.onGrass, cockpit: camMode === 3, engineOn, soundOn, rivals: rv });
     }
-    engine.muffle.frequency.setTargetAtTime(camMode === 3 ? 1900 : 20000, t, 0.1);
+    glide(engine.muffle.frequency, camMode === 3 ? 1900 : 20000, t, 0.1);
     const on = engineOn ? (input.gas ? 1 : 0.55) * cut : 0;
     let f;
     if (engine.ev) f = 200 + v / vmax * 1600;
     else f = (player.stats.engine.sound || 90) * (0.55 + gs.inGear * 1.1 + (gs.gear - 1) * 0.05);
-    engine.o1.frequency.setTargetAtTime(f, t, 0.05); engine.o2.frequency.setTargetAtTime(f * 0.5, t, 0.05);
+    glide(engine.o1.frequency, f, t, 0.05); glide(engine.o2.frequency, f * 0.5, t, 0.05);
     if (engine.real) {
         // a higher-pitched engine for the V10 and V12, and each gear starts a touch higher than the last
         const base = { v8: 0.82, hybrid: 0.86, v10: 1.0, v12: 1.08, v6h: 1.0 }[engine.kind] || 0.9, rate = base * (0.72 + rpm * 1.15 + (gs.gear - 1) * 0.03);
-        engine.low.s.playbackRate.setTargetAtTime(rate, t, 0.04); engine.high.s.playbackRate.setTargetAtTime(0.55 + rpm * 0.75 + (gs.gear - 1) * 0.02, t, 0.04);
+        glide(engine.low.s.playbackRate, rate, t, 0.04); glide(engine.high.s.playbackRate, 0.55 + rpm * 0.75 + (gs.gear - 1) * 0.02, t, 0.04);
         const hi = Math.max(0, (rpm - 0.45) / 0.55);
-        engine.low.g.gain.setTargetAtTime((0.24 - hi * 0.1) * on, t, 0.08); engine.high.g.gain.setTargetAtTime(hi * 0.2 * on, t, 0.08);
-        engine.g.gain.setTargetAtTime(0.02 * on, t, 0.1);          // a little of the made-up tone adds body
-    } else engine.g.gain.setTargetAtTime((input.gas ? 0.07 : 0.035) * (engineOn ? 1 : 0), t, 0.1);
-    engine.squeal.gain.setTargetAtTime(player.sliding && v > 12 ? 0.05 : 0, t, 0.06);
+        glide(engine.low.g.gain, (0.24 - hi * 0.1) * on, t, 0.08); glide(engine.high.g.gain, hi * 0.2 * on, t, 0.08);
+        glide(engine.g.gain, 0.02 * on, t, 0.1);          // a little of the made-up tone adds body
+    } else glide(engine.g.gain, (input.gas ? 0.07 : 0.035) * (engineOn ? 1 : 0), t, 0.1);
+    glide(engine.squeal.gain, player.sliding && v > 12 ? 0.05 : 0, t, 0.06);
+    if (engine.fx && engine.fx.echo) glide(engine.fx.echo.wet.gain, 0.16 + 0.42 * tunnelNow, t, 0.2);   // the echo is much stronger in the tunnel
 }
 function stopEngine() {
     if (weather) weather.stopSound();
@@ -1071,14 +1124,14 @@ function stopEngine() {
 // =====================================================================
 // smoke when sliding, dust on the grass, speed lines, headlights
 function updateEffects(dt) {
-    elapsed += dt; puffT += dt;
+    elapsed += dt; puffT += dt; efx.baseY = dmg.baseY = player.y;
     const r = player, fwdX = Math.cos(r.heading), fwdZ = -Math.sin(r.heading), back = r.design.L * 0.32;
     if (puffT > 0.06 && race.phase !== 'lights') {
         puffT = 0;
         const kind = r.onGrass && r.v > 8 ? 'dust' : r.sliding && r.v > 12 ? 'smoke' : null;
         if (kind) for (const side of [-1, 1]) efx.puff(r.x - fwdX * back + fwdZ * side * 0.8, r.z - fwdZ * back - fwdX * side * 0.8, kind, r.v * fwdX, r.v * fwdZ);
         // spray off the tyres in the rain, a powdery cloud in the snow: behind you and any rival close by
-        if (weatherKind !== 'sunny') for (const c of [player, ...rivals]) {
+        if (weatherKind === 'rain' || weatherKind === 'snow') for (const c of [player, ...rivals]) {
             if (c.v < 12 || Math.hypot(c.x - r.x, c.z - r.z) > 45 || Math.random() > (c === player ? 0.9 : 0.5)) continue;
             const cx = Math.cos(c.heading), cz = -Math.sin(c.heading), cb = c.design.L * 0.45, sd = Math.random() < 0.5 ? -1 : 1;
             efx.puff(c.x - cx * cb + cz * sd * 0.75, c.z - cz * cb - cx * sd * 0.75, weatherKind === 'rain' ? 'spray' : 'powder', c.v * cx, c.v * cz);
@@ -1089,16 +1142,16 @@ function updateEffects(dt) {
     efx.drawSpeedLines(r.v / r.perf.vmax, r.slip, dt);
     efx.lensDrops(dt, weatherKind === 'rain' && camMode < 2);
     if (headlight && headlight.visible) {
-        headlight.position.set(r.x + fwdX * 1.8, 1.0, r.z + fwdZ * 1.8);
-        headlight.target.position.set(r.x + fwdX * 25, 0, r.z + fwdZ * 25); headlight.target.updateMatrixWorld();
-        carGlow.position.set(r.x - fwdX * 2, 4.5, r.z - fwdZ * 2);
+        headlight.position.set(r.x + fwdX * 1.8, r.y + 1.0, r.z + fwdZ * 1.8);
+        headlight.target.position.set(r.x + fwdX * 25, r.y, r.z + fwdZ * 25); headlight.target.updateMatrixWorld();
+        carGlow.position.set(r.x - fwdX * 2, r.y + 4.5, r.z - fwdZ * 2);
     }
     const tag = document.getElementById('race-slip'); if (tag) tag.classList.toggle('show', !!r.slip);
 }
 // keep the shadow area centred on the player, and the sky around the camera
-function followSun(x = player.x, z = player.z) {
+function followSun(x = player.x, z = player.z, y = player.y) {
     const d = sun.userData.dir;
-    sun.position.set(x + d.x * 200, d.y * 200, z + d.z * 200); sun.target.position.set(x, 0, z); sun.target.updateMatrixWorld();
+    sun.position.set(x + d.x * 200, y + d.y * 200, z + d.z * 200); sun.target.position.set(x, y, z); sun.target.updateMatrixWorld();
     sky.position.copy(camera.position);
 }
 // 'auto' quality: if the frame rate stays low for a few seconds, step down a level
@@ -1146,11 +1199,11 @@ function frame(now) {
     }
     if (mode === 'trial' && race.phase === 'go') {
         race.recT = (race.recT || 0) + dt;
-        while (race.recT >= 0.05) { race.recording.push([+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3)]); race.recT -= 0.05; }
+        while (race.recT >= 0.05) { race.recording.push(player.y ? [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3), +player.y.toFixed(2)] : [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3)]); race.recT -= 0.05; }
         updateGhost();
     }
     updateCars(dt); placeCamera(false, dt); updateEngine();
-    followSun(); world.update(dt); watchFrameRate(dt);
+    followSun(); tunnelLight(dt); world.update(dt); watchFrameRate(dt);
     updateEffects(dt);
     hud(); drawMap(); cornerNames();
     drawFrame();
@@ -1237,7 +1290,7 @@ function canvasTex(w, h, draw) {
 function loadCircuit(c) {
     if (world && TRACK === c) return;
     if (world) { scene.remove(world.group); world.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { if (m.map) m.map.dispose(); for (const k of ['alphaMap', 'normalMap']) if (m[k] && m[k].isCanvasTexture) m[k].dispose(); m.dispose(); }); }); }
-    TRACK = c; T = buildTrackData(c); samples = T.samples; N = T.N; trackLen = T.trackLen; tvCams = null;
+    tunnelNow = 0; TRACK = c; T = buildTrackData(c); samples = T.samples; N = T.N; trackLen = T.trackLen; tvCams = null;
     world = buildTrack(scene);
     setAtmosphere(c.theme);
     drawMapBase();
@@ -1420,8 +1473,9 @@ function mapFrame() {
     mapCam.position.set(cx, 1500, cz); mapCam.up.set(0, 0, -1); mapCam.lookAt(cx, 0, cz);
     for (const l of world.lod) l.o.visible = true;
     const fog = scene.fog; scene.fog = null; sky.visible = false;
+    const far = world.group.children.filter(o => o.userData.backdrop && o.visible); far.forEach(o => { o.visible = false; });   // (far-off mountains only smear across a map)
     renderer.render(scene, mapCam);
-    scene.fog = fog; sky.visible = true;
+    scene.fog = fog; sky.visible = true; far.forEach(o => { o.visible = true; });
     const o = efx.overlay, x = efx.ctx2d, W = o.clientWidth, H = o.clientHeight; if (o.width !== W || o.height !== H) { o.width = W; o.height = H; }
     x.clearRect(0, 0, W, H);
     const P = TRACK.geo.outline, px = i => (P[i] - cx) / w * W + W / 2, pz = i => (P[i + 1] - cz) / h * H + H / 2;
@@ -1434,5 +1488,7 @@ function mapFrame() {
     x.strokeText(note, 14, H - 16); x.fillText(note, 14, H - 16);
 }
 export function sceneForTest() { return scene; }   // testing only
+export function rivalsForTest() { return rivals.map(r => [Math.round(((r.d % trackLen) + trackLen) % trackLen), Math.round(r.v * 3.6), +r.y.toFixed(1)]); }   // testing only: where each rival is, its speed (km/h) and height
+export function ghostForTest() { return ghost && ghost.holder.visible ? [+ghost.holder.position.x.toFixed(1), +ghost.holder.position.y.toFixed(2), +ghost.holder.position.z.toFixed(1)] : null; }   // testing only
 export function heightForTest() { return { d: Math.round(samples[player.idx].d), carY: +player.y.toFixed(2), roadY: +samples[player.idx].p.y.toFixed(2) }; }   // testing only
 export function gfxForTest() { return { renderer, scene, camera, sun, world }; }   // testing only

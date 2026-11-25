@@ -273,12 +273,12 @@ export class Damage {
     // lies on the road for a while and then shrinks away.
     throwPiece(p, racer, x, y, z, rnd) {
         const m = p.m, c = Math.cos(racer.heading), s = Math.sin(racer.heading);
-        m.position.set(racer.x + x * c + z * s, Math.max(0.1, y), racer.z - x * s + z * c);
+        m.position.set(racer.x + x * c + z * s, (racer.y || 0) + Math.max(0.1, y), racer.z - x * s + z * c);
         m.rotation.set(rnd() * 3, racer.heading, rnd() * 3); m.visible = true;
         const out = (z >= 0 ? 1 : -1) * (0.8 + rnd() * 1.6), v = racer.v * (0.6 + rnd() * 0.25);   // (out: a little way off to the car's side)
         p.vx = c * v + s * out; p.vz = -s * v + c * out; p.vy = 3.2 + rnd() * 2.2;
         p.wx = (rnd() - 0.5) * 16; p.wy = (rnd() - 0.5) * 10; p.wz = (rnd() - 0.5) * 16;
-        p.life = 0; p.rest = false; p.hy = Math.max(0.01, Math.min(p.size.x, p.size.y, p.size.z) / 2) + 0.02;   // (how high its middle sits when it lies on the road)
+        p.life = 0; p.rest = false; p.hy = (racer.y || 0) + Math.max(0.01, Math.min(p.size.x, p.size.y, p.size.z) / 2) + 0.02;   // (how high its middle sits when it lies on the road)
         this.moving = true;
     }
     // every frame (it does nothing at all unless a piece is on the road)
