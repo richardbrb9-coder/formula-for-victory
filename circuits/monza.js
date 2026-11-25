@@ -47,13 +47,13 @@ export const MONZA = {
     // The far distance (see backdrop.js): a golden afternoon in the park. Thick woods all round, the foothills and then
     // the snowy Alps away to the north, and a warm haze that the trees fade into.
     backdrop: {
-        id: 'monza', sky: 'park', haze: 0xeadfc8,
-        looks: { sunny: { tint: [1.42, 1.36, 1.3], hazeTop: 11, sunEl: 27, sun: 2.9, sunColor: 0xffe2b8, hemi: 0.78, hemiSky: 0xd4e2f4, hemiGround: 0x5a5a38, fog: [170, 1300], grade: [1.035, 1.0, 0.945], sat: 1.1 } },
-        horizon: { top: 9, bottom: -3, hazeTop: 2.2, layers: [
-            { kind: 'ridge', from: 300, to: 60, base: 0.3, height: 3.4, freq: 5, seed: 11, sharp: 1.6, floor: 0.25, colour: 0x8a9ab0, haze: 0.72, snow: 0.45, fade: 25 },   // the Alps
-            { kind: 'ridge', from: 280, to: 80, height: 1.9, freq: 4, seed: 5, colour: 0x6f8a80, haze: 0.62, fade: 30, facets: 0.5 },                                   // the foothills
-            { kind: 'trees', height: 1.5, freq: 9, seed: 3, colour: 0x4b6b3c, haze: 0.5, floor: 0.6, crown: 0.2 },                                                      // far woods, all the way round
-            { kind: 'trees', height: 1.0, freq: 14, seed: 8, colour: 0x3d5e30, haze: 0.3, floor: 0.6, crown: 0.26 }                                                     // nearer woods
+        id: 'monza', sky: 'park', haze: 0xdad0ba,
+        looks: { sunny: { tint: [1.22, 1.17, 1.1], sunTint: [1.0, 0.84, 0.6], skySat: 1.25, hazeTop: 8, sunEl: 27, sun: 2.9, sunColor: 0xffe2b8, hemi: 0.78, hemiSky: 0xd4e2f4, hemiGround: 0x5a5a38, fog: [230, 1450], grade: [1.035, 1.0, 0.945], sat: 1.1 } },
+        horizon: { top: 9, bottom: -3, hazeTop: 2.2, hazeStrength: 0.7, layers: [
+            { kind: 'ridge', from: 300, to: 60, base: 0.3, height: 3.4, freq: 5, seed: 11, sharp: 1.6, floor: 0.25, colour: 0x8a9ab0, haze: 0.55, snow: 0.45, fade: 25 },   // the Alps
+            { kind: 'ridge', from: 280, to: 80, height: 1.9, freq: 4, seed: 5, colour: 0x6f8a80, haze: 0.45, fade: 30, facets: 0.5 },                                   // the foothills
+            { kind: 'trees', height: 1.5, freq: 9, seed: 3, colour: 0x4b6b3c, haze: 0.32, floor: 0.6, crown: 0.2 },                                                      // far woods, all the way round
+            { kind: 'trees', height: 1.0, freq: 14, seed: 8, colour: 0x3d5e30, haze: 0.18, floor: 0.6, crown: 0.26 }                                                     // nearer woods
         ] }
     }
 };

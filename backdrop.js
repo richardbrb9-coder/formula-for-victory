@@ -85,12 +85,14 @@ export function seaFogColour(look, direct) { return direct ? toScreen(look.seaHa
 //    looks    { sunny, cloudy, rain, snow, sunset, night }: anything below, set just for that weather
 //  Each look can set: sky, tint (the photo's colour, [r, g, b]), haze, seaHaze, hazeTop (degrees: how high the haze
 //  reaches up the sky), fog [near, far], sunEl (degrees), sun, sunColor, hemi, hemiSky, hemiGround, env, exposure,
-//  grade ([r, g, b] for the final picture) and sat (how colourful).
+//  sunTint (the photo's colour towards the sun, [r, g, b]: a golden glow there, say), grade ([r, g, b] for the final
+//  picture), sat (how colourful) and skySat (how colourful the sky photo is: above 1 turns
+//  its pale blue patches a clearer blue, while white and grey clouds stay as they are).
 // =====================================================================
 const GREY = { cloudy: { haze: 0xc6ccd1, tint: [0.96, 0.97, 1.0], mix: 0.3 }, rain: { haze: 0xa9b0b8, tint: [0.72, 0.74, 0.78], mix: 0.2 }, snow: { haze: 0xe2e6ea, tint: [1.12, 1.13, 1.16], mix: 0.1 } };
 export function lookFor(circuit, t) {
     const B = (circuit && circuit.backdrop) || {}, kind = t.weather || (t.time === 'day' ? 'sunny' : t.time), own = (B.looks && B.looks[kind]) || {}, day = (B.looks && B.looks.sunny) || {};
-    const L = { ...t, kind, light: { ...t.light, hemiSky: 0xcfe8ff, hemiGround: 0x4a5a3a }, tint: [1, 1, 1], hazeTop: 7, grade: [1, 1, 1], sat: 1.08, ringLight: [1, 1, 1], ringHaze: 0, backdrop: B };
+    const L = { ...t, kind, light: { ...t.light, hemiSky: 0xcfe8ff, hemiGround: 0x4a5a3a }, tint: [1, 1, 1], hazeTop: 7, grade: [1, 1, 1], sat: 1.08, skySat: 1, ringLight: [1, 1, 1], ringHaze: 0, backdrop: B };
     let haze, hazeIsScreen = true;
     if (kind === 'sunny') { L.sky = B.sky || 'day'; haze = B.haze ?? t.horizon; if (B.haze == null) hazeIsScreen = false; }
     else if (GREY[kind] && t.time === 'day') {
@@ -125,14 +127,16 @@ export function lookFor(circuit, t) {
 // =====================================================================
 //  PAINTING THE HORIZON: a long thin picture, once round the compass (north at the left edge, turning clockwise) and
 //  from a little below the horizon up to 'top' degrees. Layers are painted from the furthest to the nearest:
-//    ridge   hills or mountains: { from, to, base, height, freq, seed, colour, haze, snow, sharp, floor, facets }
+//    ridge   hills or mountains: { from, to, base, height, freq, seed, colour, haze, snow, sharp, floor, facets, scrub }
+//            (scrub: how much dark scrub and pine grows in patches on the slopes, 0 to 1)
 //    trees   the top of a wood: the same, with a bumpy leafy edge
 //    fields  farmland rising gently: patchwork fields with hedges between them and a few trees
 //    town    buildings on a hillside: { ..., count, cover, colours } (lit windows at night)
 //    clouds  low clouds hanging on the hills: { from, to, base, height, count }
 //    sea     open water out to the horizon: { from, to }
 //  from, to: compass bearings in degrees (0 north, 90 east), clockwise from 'from' to 'to'; leave both out for all the
-//  way round. base, height: degrees above the horizon. haze: how far it has faded into the haze (0 none, 1 gone).
+//  way round. base, height: degrees above the horizon. haze: how far it has faded into the haze (0 none, 1 gone; it is mixed
+//  as light, so a dark slope is already quite pale by 0.2: the nearer layers usually want less).
 // =====================================================================
 const DEG = Math.PI / 180;
 const rng = seed => { let s = (seed * 2654435761) >>> 0 || 1; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
@@ -203,6 +207,18 @@ function horizonTexture(look, low) {
                     const e = line(b), lo = (L.base || 0) + L.height * 0.2; if (e < lo || e < line(b - stepB) || e <= line(b + stepB)) continue;
                     const away = mod360(b - sunB) < 180 ? 1 : -1, wDeg = (e - (L.base || 0)) * py / px * (0.9 + r() * 0.8);
                     wrap(b, wDeg * 1.2, bb => { x.fillStyle = css(dark, 0.5 * (L.facets ?? 1)); x.beginPath(); x.moveTo(X(bb), Y(e)); x.lineTo(X(bb + away * wDeg), Y(L.base || 0)); x.lineTo(X(bb + away * wDeg * 0.12), Y(L.base || 0)); x.closePath(); x.fill(); });
+                }
+            }
+            if (L.scrub) {
+                // dark scrub and pines in patches over the rock: thick low down, thinning out to bare rock at the tops
+                const base = L.base || 0, greens = [shade(L.scrubColour ?? 0x34502e, hz * 0.6), shade(L.scrubColour ?? 0x34502e, hz * 0.6, 0.7), shade(0x4f6a3c, hz * 0.6)];
+                for (let i = 0, n = Math.round(L.scrub * 4200 * (low ? 0.6 : 1)); i < n; i++) {
+                    const b = r() * 360, hill = line(b) - base, t = r(); if (hill < L.height * 0.08 || r() < t * t * 1.15) continue;
+                    const e = base + hill * t, col = greens[Math.floor(r() * 3)];
+                    for (let k = 0, m = 3 + Math.floor(r() * 5); k < m; k++) {   // (a clump of a few bushes)
+                        const bb0 = b + (r() - 0.5) * 0.7, ee = e + (r() - 0.5) * 0.4, rad = (0.08 + r() * 0.16) * (L.scrubSize || 1);
+                        wrap(mod360(bb0), rad, bb => { x.fillStyle = css(col, 0.9); x.beginPath(); x.ellipse(X(bb), Y(ee), rad * px, rad * px * 0.7, 0, 0, 7); x.fill(); });
+                    }
                 }
             }
             if (L.snow) {   // snow on the tops
@@ -293,15 +309,17 @@ function dome() {
 }
 const VERT = `varying vec2 vUv;
 void main() { vUv = uv; gl_Position = projectionMatrix * vec4(mat3(viewMatrix) * position, 1.0); gl_Position.z = gl_Position.w; }`;   // (turns with the camera but never moves: always at the very back)
-const FRAG = `uniform sampler2D sky; uniform sampler2D ring; uniform vec3 haze; uniform vec3 tint; uniform vec3 top;
+const FRAG = `uniform sampler2D sky; uniform sampler2D ring; uniform vec3 haze; uniform vec3 tint; uniform vec3 top; uniform float skySat;
+uniform vec3 sunTint; uniform vec3 sunDir;   // the photo's colour towards the sun (it fades into 'tint' away from it)
 uniform vec4 skyMap;    // how far the photo is turned, the heights (degrees) of its bottom and top edges, and whether there is one
 uniform vec3 ringMap;   // the painted horizon's bottom edge (degrees), 1 / its height, and whether there is one
 uniform vec2 hazeBand;  // the haze reaches from just below the horizon up to here (degrees)
 varying vec2 vUv;
 void main() {
   float el = vUv.y;
-  vec3 c = skyMap.w > 0.5 ? texture2D(sky, vec2(vUv.x + skyMap.x, (el - skyMap.y) / (skyMap.z - skyMap.y))).rgb * tint
-                          : mix(haze, top, pow(clamp(el / 90.0, 0.0, 1.0), 0.55));
+  vec3 c = mix(haze, top, pow(clamp(el / 90.0, 0.0, 1.0), 0.55));
+  if (skyMap.w > 0.5) { float b = vUv.x * 6.2831853, e = el * 0.0174533; float toSun = pow(max(0.0, dot(vec3(sin(b) * cos(e), sin(e), -cos(b) * cos(e)), sunDir)), 3.0);
+    c = texture2D(sky, vec2(vUv.x + skyMap.x, (el - skyMap.y) / (skyMap.z - skyMap.y))).rgb * mix(tint, sunTint, toSun); c = max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, skySat), 0.0); }
   c = mix(haze, c, smoothstep(hazeBand.x, hazeBand.y, el));
   if (ringMap.z > 0.5) { vec4 r = texture2D(ring, vec2(vUv.x, (el - ringMap.x) * ringMap.y)); vec3 e = r.rgb / max(r.a, 0.004); c = mix(c, e * e, r.a); }
   gl_FragColor = vec4(c, 1.0);
@@ -315,7 +333,7 @@ export function makeSky(look, low = false, onLoad = null) {
     // turn the photo so that its sun sits where the scene's sunlight comes from
     const sunTurn = e ? e.sunU - mod360(Math.atan2(look.sun[0], -look.sun[2]) / DEG) / 360 : 0;
     const mat = new THREE.ShaderMaterial({ vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, depthWrite: false, fog: false, uniforms: {
-        sky: { value: e ? e.tex : null }, ring: { value: ring.tex }, haze: { value: look.haze.clone() }, tint: { value: new THREE.Color(...look.tint) }, top: { value: new THREE.Color(look.top) },
+        sky: { value: e ? e.tex : null }, ring: { value: ring.tex }, haze: { value: look.haze.clone() }, tint: { value: new THREE.Color(...look.tint) }, top: { value: new THREE.Color(look.top) }, skySat: { value: look.skySat }, sunTint: { value: new THREE.Color(...(look.sunTint || look.tint)) }, sunDir: { value: new THREE.Vector3(...look.sun).normalize() },
         skyMap: { value: new THREE.Vector4(sunTurn, S && S.half ? 0 : -90, 90, e && e.tex ? 1 : 0) }, ringMap: { value: new THREE.Vector3(ring.e0, 1 / (ring.e1 - ring.e0), 1) },
         hazeBand: { value: new THREE.Vector2(-1, look.hazeTop) } } });
     const sky = new THREE.Mesh(dome(), mat); sky.frustumCulled = false; sky.renderOrder = 10; sky.userData.ready = !e || !!e.tex || e.failed;

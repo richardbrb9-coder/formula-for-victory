@@ -83,7 +83,9 @@ export function silverstoneScenery(ctx) {
     const nearLane = (x, z) => { for (let i = 0; i < lane.length; i += 4) if ((lane[i] - x) ** 2 + (lane[i + 1] - z) ** 2 < 15 * 15) return true; return false; };
 
     // --- grandstands ---
-    buildStands(ctx, STANDS, 0x1E3A8A);
+    // (on this open airfield nothing hides a far-off stand, so each is drawn until the haze has swallowed it, not
+    // switched off part-way into it, where it would visibly vanish)
+    buildStands(ctx, STANDS, 0x1E3A8A, 1450);
 
     // --- grass banks for the crowds, behind the barriers on the straights ---
     {

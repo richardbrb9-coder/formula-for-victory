@@ -36,7 +36,7 @@ function buildTrack(scene) {
     group.traverse(o => { if (o.isMesh && !o.receiveShadow && o.material && !o.material.transparent) o.receiveShadow = true; });
     // Distance culling: anything lost in the haze isn't drawn at all (big buildings give up a little sooner). Each piece of
     // scenery is measured once here; track.js then switches them on and off a few times a second.
-    const listed = new Set(made.lod.map(l => l.o)), box = new THREE.Box3(), ball = new THREE.Sphere(), hazeEnd = SC.THEMES[TRACK.theme].fog[1];
+    const listed = new Set(made.lod.map(l => l.o)), box = new THREE.Box3(), ball = new THREE.Sphere(), hazeEnd = ((TRACK.backdrop && TRACK.backdrop.looks && TRACK.backdrop.looks.sunny && TRACK.backdrop.looks.sunny.fog) || SC.THEMES[TRACK.theme].fog)[1];   // (where this circuit's haze is complete)
     for (const o of group.children) {
         if (listed.has(o) || o.userData.always) continue;
         box.setFromObject(o); if (box.isEmpty()) continue;
@@ -1500,6 +1500,7 @@ function mapFrame() {
     x.strokeText(note, 14, H - 16); x.fillText(note, 14, H - 16);
 }
 export function sceneForTest() { return scene; }   // testing only
+export function testTime(t) { if (!SC.TIMES[t]) return false; timeOfDay = t; if (world && TRACK) setAtmosphere(TRACK.theme); return true; }   // testing only: 'day', 'sunset' or 'night'
 export function rivalsForTest() { return rivals.map(r => [Math.round(((r.d % trackLen) + trackLen) % trackLen), Math.round(r.v * 3.6), +r.y.toFixed(1)]); }   // testing only: where each rival is, its speed (km/h) and height
 export function ghostForTest() { return ghost && ghost.holder.visible ? [+ghost.holder.position.x.toFixed(1), +ghost.holder.position.y.toFixed(2), +ghost.holder.position.z.toFixed(1)] : null; }   // testing only
 export function heightForTest() { return { d: Math.round(samples[player.idx].d), carY: +player.y.toFixed(2), roadY: +samples[player.idx].p.y.toFixed(2) }; }   // testing only

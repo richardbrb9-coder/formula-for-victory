@@ -49,7 +49,7 @@ export function lookFor(themeKey, time = 'day') {
 // Reflections for the cars' paint: the sky and the ground, blurred into an environment map
 export function makeEnvironment(renderer, t, low = false) {
     const env = new THREE.Scene();
-    env.add(makeSky(t, low));
+    const sky = makeSky(t, low); env.add(sky);
     // (the ground is mostly grey road and run-off near a car, with only a little of the grass colour, so paint isn't tinted green)
     const ground = new THREE.Mesh(new THREE.CircleGeometry(1900, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x4a4d52).lerp(new THREE.Color(t.ground), 0.3).multiplyScalar(t.stars ? 0.15 : 1) }));
     ground.material.toneMapped = false;
@@ -58,7 +58,7 @@ export function makeEnvironment(renderer, t, low = false) {
     const rt = pmrem.fromScene(env, 0.02, 1, 2500), tex = rt.texture;
     tex.userData.target = rt;   // (to give it back later: freeing just the picture leaves its drawing surface behind)
     pmrem.dispose();
-    env.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
+    env.traverse(o => { if (o.geometry && o !== sky) o.geometry.dispose(); if (o.material) o.material.dispose(); });   // (the sky's dome shape is shared with the race's own sky: it stays)
     return tex;
 }
 

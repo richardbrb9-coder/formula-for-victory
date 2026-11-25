@@ -61,12 +61,12 @@ export const SILVERSTONE = {
     // The far distance (see backdrop.js): flat English farmland under a big sky. Fields and hedges with a few trees, low
     // wooded country beyond, and soft grey-blue light.
     backdrop: {
-        id: 'silverstone', sky: 'airfield', haze: 0xcfd8de,
-        looks: { sunny: { tint: [1.46, 1.56, 1.74], hazeTop: 6, sunEl: 44, sun: 2.7, sunColor: 0xfff3e2, hemi: 0.85, hemiSky: 0xcfdcea, hemiGround: 0x56603f, fog: [300, 1500], grade: [0.98, 1.0, 1.03], sat: 1.02 } },
+        id: 'silverstone', sky: 'airfield', haze: 0xcad7e0,
+        looks: { sunny: { tint: [1.3, 1.44, 1.72], skySat: 1.6, hazeTop: 6, sunEl: 44, sun: 2.7, sunColor: 0xfff3e2, hemi: 0.85, hemiSky: 0xcfdcea, hemiGround: 0x56603f, fog: [300, 1500], grade: [0.98, 1.0, 1.03], sat: 1.02 } },
         horizon: { top: 6, bottom: -2, hazeTop: 1.2, hazeStrength: 0.7, layers: [
-            { kind: 'ridge', height: 1.5, freq: 3, seed: 21, colour: 0x7f93a0, haze: 0.7, floor: 0.4, facets: 0 },                           // low wooded country far away
-            { kind: 'fields', height: 1.25, freq: 4, seed: 4, rows: 4, haze: 0.4, floor: 0.45 },                                          // fields and hedges
-            { kind: 'trees', height: 0.42, freq: 17, seed: 9, colour: 0x44663a, haze: 0.35, floor: 0.2, sharp: 2.2, crown: 0.13 }          // clumps of trees in the nearer fields
+            { kind: 'ridge', height: 1.5, freq: 3, seed: 21, colour: 0x7f93a0, haze: 0.55, floor: 0.4, facets: 0 },                           // low wooded country far away
+            { kind: 'fields', height: 1.25, freq: 4, seed: 4, rows: 4, haze: 0.2, floor: 0.45 },                                          // fields and hedges
+            { kind: 'trees', height: 0.42, freq: 17, seed: 9, colour: 0x44663a, haze: 0.15, floor: 0.2, sharp: 2.2, crown: 0.13 }          // clumps of trees in the nearer fields
         ] }
     }
 };

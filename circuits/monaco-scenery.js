@@ -99,7 +99,7 @@ export function monacoScenery(ctx) {
     {
         const b = T.box, M = LM, CELL = 8, x0 = b.minX - M, z0 = b.minZ - M, nx = Math.ceil((b.maxX - b.minX + 2 * M) / CELL), nz = Math.ceil((b.maxZ - b.minZ + 2 * M) / CELL);
         const pos = new Float32Array((nx + 1) * (nz + 1) * 3), col = new Float32Array((nx + 1) * (nz + 1) * 3), idx = [], info = {}, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
-        const c = new THREE.Color(), paving = new THREE.Color(0x77726a), town = new THREE.Color(0x746f66), scrub = new THREE.Color(0x5f7048), rock = new THREE.Color(0x857d70), seabed = new THREE.Color(0x35657c);
+        const c = new THREE.Color(), paving = new THREE.Color(0x77726a), town = new THREE.Color(0x746f66), scrub = new THREE.Color(0x5f7048), rock = new THREE.Color(0x8b8c87), seabed = new THREE.Color(0x35657c);
         for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
             const x = x0 + i * CELL, z = z0 + j * CELL, y = land(x, z, info), k = (j * (nx + 1) + i) * 3;
             if (y < 0) c.copy(seabed);
