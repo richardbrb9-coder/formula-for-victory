@@ -118,7 +118,8 @@ export function makeEnvironment(renderer, t) {
     ground.material.toneMapped = false;
     ground.rotation.x = -Math.PI / 2; ground.position.y = -20; env.add(ground);
     const pmrem = new THREE.PMREMGenerator(renderer);
-    const tex = pmrem.fromScene(env, 0.02, 1, 2500).texture;
+    const rt = pmrem.fromScene(env, 0.02, 1, 2500), tex = rt.texture;
+    tex.userData.target = rt;   // (to give it back later: freeing just the picture leaves its drawing surface behind)
     pmrem.dispose();
     env.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
     return tex;

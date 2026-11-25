@@ -615,8 +615,10 @@ function updateGhost() {
     if (ghost.lapT0 == null) { ghost.holder.visible = false; return; }
     const t = race.raceTime - ghost.lapT0, i = Math.floor(t / 0.05);
     if (i >= ghost.frames.length) { ghost.holder.visible = false; return; }
-    const [x, z, h, y = 0] = ghost.frames[i];
+    const [x, z, h, y = 0] = ghost.frames[i], nx = ghost.frames[i + 2];
     ghost.holder.visible = true; ghost.holder.position.set(x, y, z); ghost.holder.rotation.y = h;
+    // nose up on a climb, down on a descent, worked out from where the ghost is a moment later
+    if (nx) { const run = Math.hypot(nx[0] - x, nx[1] - z); if (run > 0.5) ghost.holder.rotation.z = Math.atan(((nx[3] || 0) - y) / run); }
 }
 // The finishing order of the whole field, worked out the moment you cross the line. Rivals who are still racing are
 // driven on to the finish straight away, at high speed and out of sight, by the very same driving code (in the same
@@ -891,13 +893,13 @@ const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 // buildings right at the edge of the road) never swings out through a wall on a tight corner.
 function keepCameraInside() {
     let best = player.idx, bd = Infinity;
-    for (let j = -16; j <= 6; j++) { const i = (player.idx + j + N) % N, p = samples[i].p, dx = camPos.x - p.x, dz = camPos.z - p.z, dd = dx * dx + dz * dz; if (dd < bd) { bd = dd; best = i; } }
+    for (let j = -16; j <= 12; j++) { const i = (player.idx + j + N) % N, p = samples[i].p, dx = camPos.x - p.x, dz = camPos.z - p.z, dd = dx * dx + dz * dz; if (dd < bd) { bd = dd; best = i; } }
     const s = samples[best];
     if (TRACK.tightWalls) {
         const lat = (camPos.x - s.p.x) * s.n.x + (camPos.z - s.p.z) * s.n.z, over = lat > 0 ? lat - (s.wl - 0.8) : -lat - (s.wr - 0.8);
         if (over > 0) { camPos.x -= s.n.x * over * Math.sign(lat); camPos.z -= s.n.z * over * Math.sign(lat); }
     }
-    if (camPos.y < s.p.y + 1.1) camPos.y = s.p.y + 1.1;
+    if (camPos.y < s.p.y + 0.7) camPos.y = s.p.y + 0.7;   // (low enough for the replay's low on-board shot, which sits at 0.8)
     if (s.roofed) camPos.y = Math.min(camPos.y, s.p.y + (TRACK.tunnelHeight || 5.6) - 0.9);
 }
 // Inside a tunnel the daylight fades out (the tunnel's own lamps light its walls), and comes back as you near the far end
@@ -1078,7 +1080,9 @@ function startRoar() {
 }
 // Slide a sound setting towards a new value. Each call replaces the one before: the browser otherwise keeps every
 // one ever asked for, and after a few minutes' racing was spending more time on the sound than on the picture.
-const glide = (param, value, t, tc) => { param.cancelScheduledValues(0); param.setTargetAtTime(value, t, tc); };
+// (cancelAndHoldAtTime keeps the value where it has got to; plain cancelScheduledValues is the fallback for browsers
+// without it, and only drops what is still to come, so a sound never jumps back to where it started)
+const glide = (param, value, t, tc) => { if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t); else param.cancelScheduledValues(t); param.setTargetAtTime(value, t, tc); };
 function updateEngine() {
     if (!engine) return;
     const v = Math.abs(player.v), vmax = player.perf.vmax, t = engine.ctx.currentTime;
@@ -1289,7 +1293,7 @@ function canvasTex(w, h, draw) {
 }
 function loadCircuit(c) {
     if (world && TRACK === c) return;
-    if (world) { scene.remove(world.group); world.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { if (m.map) m.map.dispose(); for (const k of ['alphaMap', 'normalMap']) if (m[k] && m[k].isCanvasTexture) m[k].dispose(); m.dispose(); }); }); }
+    if (world) { scene.remove(world.group); world.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { for (const k of ['map', 'alphaMap', 'normalMap', 'roughnessMap', 'emissiveMap']) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); }); }); }   // (every picture: the photo ones are copies made for this circuit, and going back to a circuit builds it afresh)
     tunnelNow = 0; TRACK = c; T = buildTrackData(c); samples = T.samples; N = T.N; trackLen = T.trackLen; tvCams = null;
     world = buildTrack(scene);
     setAtmosphere(c.theme);
@@ -1304,7 +1308,7 @@ function setAtmosphere(theme) {
     scene.background = haze;
     scene.fog = new THREE.Fog(haze, th.fog[0], th.fog[1]);
     if (!SC.hasPhotoSky(th)) SC.whenSkyLoads(() => { if (TRACK && TRACK.theme === theme && look === th) setAtmosphere(theme); });
-    if (scene.environment) scene.environment.dispose();
+    if (scene.environment) { const rt = scene.environment.userData.target; if (rt) rt.dispose(); else scene.environment.dispose(); }   // (the whole render target, or it stays in memory each time)
     scene.environment = SC.makeEnvironment(renderer, th);
     scene.environmentIntensity = th.light.env;
     sun.intensity = th.light.sun; sun.color.set(th.light.sunColor); hemi.intensity = th.light.hemi;
