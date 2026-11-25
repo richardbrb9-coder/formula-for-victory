@@ -1361,3 +1361,4 @@ function mapFrame() {
     x.strokeText(note, 14, H - 16); x.fillText(note, 14, H - 16);
 }
 export function sceneForTest() { return scene; }   // testing only
+export function heightForTest() { return { d: Math.round(samples[player.idx].d), carY: +player.y.toFixed(2), roadY: +samples[player.idx].p.y.toFixed(2) }; }   // testing only

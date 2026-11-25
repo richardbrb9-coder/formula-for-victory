@@ -134,7 +134,11 @@ export function setDetail(on) { useDetailMaps = on; }
 export function photoTex(name, kind = 'col') {
     const key = name + kind;
     if (!texCache[key]) {
-        const t = loader.load(`textures/${name}_${kind}.webp`);
+        // (if a picture can't be loaded, a plain one stands in: a flat surface, or plain white for the tint to colour)
+        const t = loader.load(`textures/${name}_${kind}.webp`, undefined, undefined, () => {
+            const c = document.createElement('canvas'); c.width = c.height = 2; const x = c.getContext('2d'); x.fillStyle = kind === 'nor' ? '#8080ff' : '#ffffff'; x.fillRect(0, 0, 2, 2);
+            t.image = c; t.needsUpdate = true;
+        });
         t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
         if (kind === 'col') t.colorSpace = THREE.SRGBColorSpace;
         texCache[key] = t;
