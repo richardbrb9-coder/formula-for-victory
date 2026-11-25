@@ -11,7 +11,7 @@ const wrapAngle = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.
 // grandstands: [metres round the lap, side (1 left, -1 right), length, rows, gap behind the wall]
 const STANDS = [
     [5642, 1, 240, 10, 3.5], [112, 1, 240, 10, 3.5],                              // the main straight, opposite the pits
-    [4880, 1, 60, 7, 4], [4962, 1, 60, 7, 4], [5044, 1, 60, 7, 4], [5126, 1, 60, 7, 4],   // round the outside of the Parabolica
+    [4880, 1, 70, 7, 4], [4962, 1, 70, 7, 4], [5044, 1, 70, 7, 4], [5126, 1, 70, 7, 4],   // round the outside of the Parabolica (close together, so the gaps between them are small)
     [800, 1, 60, 7, 4], [1150, 1, 50, 7, 4], [1300, 1, 50, 7, 4], [1838, -1, 60, 7, 4], [2262, 1, 60, 7, 4], [2590, 1, 40, 7, 4], [3728, -1, 60, 7, 4]
 ];
 const PIT = { from: 5300, to: 150, d: 5690, sections: 30, front: 27, deep: 82 };   // the pit building's front is 27 m from the middle of the road
@@ -58,6 +58,7 @@ export function monzaScenery(ctx) {
         group.add(lines.mesh(new THREE.MeshBasicMaterial({ color: 0xf2f2f2, side: THREE.DoubleSide })));
         const pits = SC.pitBuilding(PIT.sections);
         SC.placeBeside(ctx, pits, PIT.d, -PIT.front); pits.userData.far = 950; pits.userData.noProbe = true;
+        group.add(SC.mergeStatic([pits]));          // (about thirty pieces drawn as ten)
         // the podium: Monza's stands out from the pit building, high over the pit lane
         const pod = new THREE.Group(), white = new THREE.MeshStandardMaterial({ color: 0xf4f4f0, roughness: 0.7 }), dark = new THREE.MeshStandardMaterial({ color: 0x232831, roughness: 0.6, metalness: 0.3 });
         const box = (w, h, dp, x, y, z, mat) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dp), mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; pod.add(m); return m; };
@@ -76,15 +77,23 @@ export function monzaScenery(ctx) {
         back.rotation.y = Math.PI; back.position.set(0, 8.15, -1.2); pod.add(back);
         box(18.2, 4.8, 0.2, 0, 8.15, -1.08, dark);
         SC.placeBeside(ctx, pod, -9, -PIT.front);
+        group.add(SC.mergeStatic([pod]));
     }
 
-    // --- grandstands ---
+    // --- grandstands (neighbouring stands are then drawn together, as one) ---
+    const stands = [];
     for (const [d, side, len, rows, gap] of STANDS) {
         const s = T.sampleAt(d);
         const st = SC.grandstand(ctx, d, side * (wallAt(s, side) + gap), len, rows, rows >= 9 ? 0x1f6b45 : [0xCE2B37, 0xf1f1ec, 0x1f6b45][Math.round(d / 80) % 3]);
         st.userData.far = 950;   // (not drawn from further away than this: by then the trees hide it)
         st.userData.noProbe = true;
         st.children.forEach((part, i) => { if (part.isInstancedMesh && i < 2) part.castShadow = false; });   // only the roof casts a shadow (the terraces and steelwork are a lot of triangles to draw twice)
+        stands.push({ st, d });
+    }
+    while (stands.length) {
+        const first = stands.shift(), near = [first.st];
+        for (let i = stands.length - 1; i >= 0; i--) if (Math.abs(wrapD(stands[i].d - first.d, L)) < 420) near.push(stands.splice(i, 1)[0].st);
+        group.add(SC.mergeStatic(near));
     }
 
     // --- the old banked oval (the 'Sopraelevata'), from the map ---
@@ -95,11 +104,12 @@ export function monzaScenery(ctx) {
         const bd = 395, s = T.sampleAt(bd), span = s.wl + s.wr + 6, bridge = new THREE.Group();
         SC.footbridge(bridge, span, 'FORMULA FOR VICTORY');
         const bp = T.pathAt(bd, (s.wl - s.wr) / 2, 0); bridge.position.set(bp.x, 0, bp.z); bridge.rotation.y = bp.heading + Math.PI / 2; group.add(bridge);
+        group.add(SC.mergeStatic([bridge]));
     }
 
     // --- advertising boards for made-up brands, behind the barrier on the straights; braking boards before the big stops ---
     {
-        const faces = SC.BRANDS.map(() => new Quads()), backs = new Quads(), nums = new Quads();
+        const faces = new Quads(), backs = new Quads(), nums = new Quads(), NB = SC.BRANDS.length;
         const board = (q, d, lat, w, y0, y1, uv, backToo = true) => {
             const c = T.pathAt(d, lat, 0), ax = Math.cos(c.heading) * w / 2, az = -Math.sin(c.heading) * w / 2, sg = Math.sign(lat);
             // (written so the picture reads the right way round from the track)
@@ -113,16 +123,16 @@ export function monzaScenery(ctx) {
             const side = k % 2 ? 1 : -1; k++;
             if (inZone(d, 5200, 600) || STANDS.some(([sd, ss, len]) => ss === side && Math.abs(wrapD(d - sd, L)) < len / 2 + 12)) continue;
             if (side < 0 && inZone(d, 3270, 3350) || side > 0 && inZone(d, 3270, 3350)) continue;
-            board(faces[k % faces.length], d, side * (wallAt(s, side) + 0.9), 7, 0.75, 2.05);
+            const b = k % NB, v0 = 1 - (b + 1) / NB, v1 = 1 - b / NB;   // (every brand's picture is one strip of the same picture)
+            board(faces, d, side * (wallAt(s, side) + 0.9), 7, 0.75, 2.05, [0, v0, 1, v0, 0, v1, 1, v1]);
         }
-        SC.BRANDS.forEach(([text, bg, fg], i) => {
-            if (!faces[i].idx.length) return;
-            const m = faces[i].mesh(new THREE.MeshStandardMaterial({ roughness: 0.6, side: THREE.DoubleSide, map: SC.canvasTex(512, 96, (x, w, h) => {
-                x.fillStyle = bg; x.fillRect(0, 0, w, h); x.fillStyle = fg; x.font = '900 54px Arial Black, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle';
-                const tw = x.measureText(text).width; if (tw > w - 24) x.font = `900 ${Math.floor(54 * (w - 24) / tw)}px Arial Black, Arial`; x.fillText(text, w / 2, h / 2 + 3);
-            }, false) }));
-            m.castShadow = true; group.add(m);
-        });
+        const fm = faces.mesh(new THREE.MeshStandardMaterial({ roughness: 0.6, side: THREE.DoubleSide, map: SC.canvasTex(512, 96 * NB, (x, w) => {
+            SC.BRANDS.forEach(([text, bg, fg], i) => {
+                const y = i * 96; x.fillStyle = bg; x.fillRect(0, y, w, 96); x.fillStyle = fg; x.font = '900 54px Arial Black, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle';
+                const tw = x.measureText(text).width; if (tw > w - 24) x.font = `900 ${Math.floor(54 * (w - 24) / tw)}px Arial Black, Arial`; x.fillText(text, w / 2, y + 48 + 3);
+            });
+        }, false) }));
+        fm.castShadow = true; group.add(fm);
         // braking boards: 300, 200, 100
         for (const at of BRAKING) [300, 200, 100].forEach((m, j) => {
             const d = at - m, s = T.sampleAt(d);
@@ -157,10 +167,9 @@ export function monzaScenery(ctx) {
             const close = T.near(px, pz).dist < 70;
             spots.push({ x: px, z: pz, size: SC.rand(1.7, 2.7), shadow: close });
         }
-        // planted in 400 m squares, so only the squares in view are drawn
-        const squares = new Map();
-        for (const sp of spots) { const key = Math.floor(sp.x / 400) + ',' + Math.floor(sp.z / 400); if (!squares.has(key)) squares.set(key, []); squares.get(key).push(sp); }
-        for (const list of squares.values()) SC.plantTrees(ctx, list, SC.TREE_MIX.park);
+        // all planted at once: one drawing for each kind of tree (each tree is only a flat picture, so the thousands out of
+        // sight cost far less than asking the tablet to draw dozens of separate patches of wood)
+        SC.plantTrees(ctx, spots, SC.TREE_MIX.park);
         ctx.treeCount = spots.length;
     }
     return { update() {} };
@@ -189,7 +198,7 @@ function oldBanking(ctx) {
         // where it crosses the track: the nearest point of the oval to the track, away from the oval's two ends
         let ic = -1, best = 30;
         for (let i = Math.floor(n * 0.15); i < n * 0.85; i++) { const dd = T.nearTrack(P[i][0], P[i][1]); if (dd < best) { best = dd; ic = i; } }
-        const surf = new Quads(), rail = new Quads(); let prev = null;
+        const surf = new Quads(), rail = new Quads(), under = new Quads(); let prev = null;
         for (let i = 0; i < n; i++) {
             const [x, z] = P[i], nx = -Math.sin(head[i]), nz = -Math.cos(head[i]);           // to the left of the old track's direction
             const nr = T.near(x, z), s = nr.i >= 0 ? T.samples[nr.i] : null, lift = ic < 0 ? 0 : 6.8 * smooth(0, 1, 1 - Math.abs(i - ic) * 6 / 190);
@@ -208,12 +217,14 @@ function oldBanking(ctx) {
                     if (Math.max(h0, h1) > 0.4) { const b0 = prev.over || row.over ? h0 - 0.9 : -0.1, b1 = prev.over || row.over ? h1 - 0.9 : -0.1; surf.add(down(prev[e], b0), prev[e], down(row[e], b1), row[e], uv(0, Math.max(h0, h1) / 4)); }
                     if (Math.max(h0, h1) > 1.2) rail.add(prev[e], down(prev[e], h0 + 0.75), row[e], down(row[e], h1 + 0.75));   // the old guard wall along a high edge
                 }
-                if (prev.over || row.over) surf.add(down(prev.l, prev.hl - 0.9), down(prev.r, prev.hr - 0.9), down(row.l, row.hl - 0.9), down(row.r, row.hr - 0.9), uv(0, 2.3));   // the underside
+                if (prev.over || row.over) under.add(down(prev.l, prev.hl - 0.9), down(prev.r, prev.hr - 0.9), down(row.l, row.hl - 0.9), down(row.r, row.hr - 0.9), uv(0, 2.3));   // the underside
             }
             prev = row;
         }
         const m = surf.mesh(mat); m.castShadow = m.receiveShadow = true; group.add(m);
         const r = rail.mesh(railMat); r.castShadow = true; group.add(r);
+        // the underside of the bridge: in its own shade, a dark stained grey (not lit green by the grass below)
+        if (under.idx.length) group.add(under.mesh(new THREE.MeshStandardMaterial({ map: mat.map, color: 0x6a665e, roughness: 1, side: THREE.DoubleSide })));
     }
     return (x, z) => { for (let ax = -1; ax <= 1; ax++) for (let az = -1; az <= 1; az++) if (mark.has(key(x + ax * 14, z + az * 14))) return true; return false; };
 }

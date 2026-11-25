@@ -70,13 +70,17 @@ function dropBlob(m) { m.geometry.dispose(); m.material.map.dispose(); m.materia
 function makeRacer(design, factor, isPlayer) {
     const model = createCar(design, { merge: true, lite: !isPlayer }), stats = carStats(design);   // rivals use the lighter build
     const holder = new THREE.Group(), blob = blobShadow(); holder.add(model.group, blob);
-    model.group.traverse(o => { if (o.isMesh) o.castShadow = o.material !== model.mats.spinBlur; });
+    // The car's shadow on the road is cast by ONE simple copy of its shape (see farModel) instead of its forty parts.
+    // The copy is only seen by the sun's shadow camera (layer 1), never by the camera you watch through.
+    model.group.traverse(o => { if (o.isMesh) o.castShadow = false; });
     // a soft contact shadow right under the car (with the sun's shadows on, a lighter one, so the car sits on the road)
     blob.material.opacity = renderer && renderer.shadowMap.enabled ? 0.55 : 1;
     const racer = { design, model, holder, blob, stats, perf: perf(stats, factor), isPlayer, x: 0, y: 0, z: 0, heading: 0, v: 0, steer: 0, d: 0, idx: 0, lap: 0,
              lapStart: 0, lastLat: 0, finished: null, best: null, half: false, wheelSpin: 0, lineOffset: 0, lat: 0, latV: 0,
              laps: [], lineStart: 0, hitAt: -9 };   // (laps: every lap time; lineStart: when it first crossed the line after the start; hitAt: its last bump)
-    if (!isPlayer) { racer.far = farModel(model); holder.add(racer.far); }   // (made before the springs go in, while every part is in its resting place)
+    racer.far = farModel(model); holder.add(racer.far);   // (made before the springs go in, while every part is in its resting place)
+    racer.shadowCaster = new THREE.Mesh(racer.far.geometry, racer.far.material); racer.shadowCaster.position.copy(racer.far.position); racer.shadowCaster.quaternion.copy(racer.far.quaternion);
+    racer.shadowCaster.layers.set(1); racer.shadowCaster.castShadow = true; holder.add(racer.shadowCaster);
     fitSuspension(racer, isPlayer && quality !== 'low');     // the body rides on springs; your own car shows its suspension parts
     return racer;
 }
@@ -89,6 +93,26 @@ function averageColour(tex) {
     try { const x = pix.getContext('2d', { willReadFrequently: true }); x.clearRect(0, 0, 1, 1); x.drawImage(tex.image, 0, 0, 1, 1); const d = x.getImageData(0, 0, 1, 1).data; if (d[3] > 8) c.setRGB(d[0] / 255, d[1] / 255, d[2] / 255, THREE.SRGBColorSpace); } catch (e) { /* keeps white */ }
     mapColours.set(tex.uuid, c); return c;
 }
+// a picture's pixels (shrunk to at most 256 across), to read colours from by texture position (u, v)
+const pixelCache = new Map();
+function pixelsOf(tex) {
+    if (pixelCache.has(tex.uuid)) return pixelCache.get(tex.uuid);
+    let out = null;
+    try {
+        const img = tex.image, iw = img.width || img.videoWidth, ih = img.height || img.videoHeight;
+        if (iw && ih) {
+            const k = Math.min(1, 256 / Math.max(iw, ih)), w = Math.max(1, Math.round(iw * k)), h = Math.max(1, Math.round(ih * k));
+            const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, w, h);
+            const d = x.getImageData(0, 0, w, h).data, rep = tex.repeat, off = tex.offset, flip = tex.flipY;
+            out = { at(u, v, c) {
+                u = u * rep.x + off.x; v = v * rep.y + off.y; u -= Math.floor(u); v -= Math.floor(v);
+                const px = Math.min(w - 1, Math.floor(u * w)), py = Math.min(h - 1, Math.floor((flip ? 1 - v : v) * h)), k4 = (py * w + px) * 4;
+                return d[k4 + 3] < 8 ? c.setRGB(1, 1, 1) : c.setRGB(d[k4] / 255, d[k4 + 1] / 255, d[k4 + 2] / 255, THREE.SRGBColorSpace);
+            } };
+        }
+    } catch (e) { out = null; }
+    pixelCache.set(tex.uuid, out); return out;
+}
 function farModel(model) {
     const pos = [], nor = [], col = [], idx = [], v = new THREE.Vector3(), c = new THREE.Color(), m = new THREE.Matrix4(), n3 = new THREE.Matrix3();
     model.group.updateMatrixWorld(true);
@@ -98,12 +122,16 @@ function farModel(model) {
         if (!o.isMesh || !o.visible || !mat || Array.isArray(mat) || mat === model.mats.spinBlur || (mat.transparent && mat.opacity < 0.6) || !o.geometry.attributes.normal) return;
         const g = o.geometry, P = g.attributes.position, Nn = g.attributes.normal, base = pos.length / 3;
         m.multiplyMatrices(inv, o.matrixWorld); n3.getNormalMatrix(m);
-        c.copy(mat.color || c.set(0xffffff)); if (mat.map && mat.map.image) c.multiply(averageColour(mat.map));
+        c.copy(mat.color || c.set(0xffffff));
+        // a painted picture (the livery: stripes, number, sponsors) is copied onto the corners of the triangles, so the
+        // simple car still shows its team's colours in the right places; other pictures just give their average colour
+        const pic = mat.map && mat.map.image && g.attributes.uv ? pixelsOf(mat.map) : null, U = g.attributes.uv, tc = new THREE.Color();
+        if (mat.map && mat.map.image && !pic) c.multiply(averageColour(mat.map));
         if (mat.metalness > 0.6) c.multiplyScalar(0.75);             // (bare metal reads a little darker without its reflections)
         for (let i = 0; i < P.count; i++) {
             v.fromBufferAttribute(P, i).applyMatrix4(m); pos.push(v.x, v.y, v.z);
             v.fromBufferAttribute(Nn, i).applyMatrix3(n3).normalize(); nor.push(v.x, v.y, v.z);
-            col.push(c.r, c.g, c.b);
+            if (pic) { pic.at(U.getX(i), U.getY(i), tc); col.push(c.r * tc.r, c.g * tc.g, c.b * tc.b); } else col.push(c.r, c.g, c.b);
         }
         if (g.index) for (let i = 0; i < g.index.count; i++) idx.push(base + g.index.getX(i)); else for (let i = 0; i < P.count; i++) idx.push(base + i);
     });
@@ -113,6 +141,8 @@ function farModel(model) {
     mesh.position.copy(model.group.position); mesh.quaternion.copy(model.group.quaternion); mesh.visible = false;
     return mesh;
 }
+// how close a rival must be to be drawn in full (a full car is about forty pieces to draw; the simple one is one)
+const fullDetailAt = () => quality === 'high' ? 60 : quality === 'medium' ? 24 : 16;
 // show a rival in full, or as its simple far-away shape
 function showDetail(r, full) {
     if (!r.far || r.fullOn === full) return;
@@ -141,7 +171,9 @@ let sky = null, sun = null, hemi = null, efx = null, dmg = null, headlight = nul
 let timeOfDay = 'day';
 let weatherKind = Object.keys(WEATHERS).includes(store('raceWeather', 'sunny')) ? store('raceWeather', 'sunny') : 'sunny', weather = null;
 // graphics quality: 'auto' picks a level and steps down if the frame rate drops
-let qualitySetting = store('raceQuality', 'auto'), quality = qualitySetting === 'auto' ? SC.guessQuality() : qualitySetting;
+let qualitySetting = store('raceQuality', 'auto'), quality = qualitySetting === 'auto' ? autoQuality() : qualitySetting;
+// 'auto': the level this device settled on last time, or a first guess
+function autoQuality() { const q = store('autoLevel', null); return SC.QUALITY[q] ? q : SC.guessQuality(); }
 let world = null, player = null, rivals = [], ghost = null, mode = 'race', difficulty = 'medium';
 const fieldSize = 9;                               // nine rivals: a grid of ten
 let lapsChosen = 3, playerTeam = 5, onExit = null; // set by the menus (see start)
@@ -194,7 +226,7 @@ function updateReflections() {
         // strength from carmodel.js, e.g. the darker see-through glass, as a multiplier)
         if (tex) for (const m of reflectiveMaterials(r.model)) { if (m.userData.envBase === undefined) m.userData.envBase = m.envMapIntensity; m.envMapIntensity = scene.environmentIntensity * 1.35 * m.userData.envBase; }
     }
-    if (tex) probe.update(scene, race.podium && !race.replay ? podium.group.position : player.holder.position, [player.holder, weather && weather.group, ...(quality === 'high' ? [] : world.noProbe)].filter(Boolean), sky);   // (below High graphics the big buildings are left out of the reflections)
+    if (tex) probe.update(scene, race.podium && !race.replay ? podium.group.position : player.holder.position, [player.holder, weather && weather.group, ...(quality === 'high' ? [] : [...world.noProbe, ...rivals.map(r => r.holder)])].filter(Boolean), sky);   // (below High graphics the big buildings and the other cars are left out of the reflections)
 }
 // where the sun is in the picture, and how strongly its lens flare shows (sunny days and sunsets only)
 const sunTmp = new THREE.Vector3(), sunUV = new THREE.Vector2(), SUN_SUNSET = new THREE.Color(1, 0.62, 0.32), SUN_DAY = new THREE.Color(1, 0.93, 0.8);
@@ -253,13 +285,14 @@ function storeSet(key, v) { try { localStorage.setItem('ffv_' + key, JSON.string
 function setupRace() {
     // remove old cars
     leavePodium();
+    if (ghost) ghost.model.group.traverse(o => { if (o.isMesh && o.material && o.material.userData.ghostCopy) o.material.dispose(); });   // (the see-through copies)
     [player, ...rivals, ghost].forEach(r => { if (r) { scene.remove(r.holder); dmg.unfit(r); r.model.dispose(); dropBlob(r.blob); if (r.far) { r.far.geometry.dispose(); r.far.material.dispose(); } if (r.cockpit) { if (r.cockpit.group.parent) r.cockpit.group.parent.remove(r.cockpit.group); r.cockpit.dispose(); } } });
-    rivals = []; ghost = null;
+    rivals = []; ghost = null; pixelCache.clear(); mapColours.clear();   // (each race's cars have their own pictures)
     player = makeRacer(teamDesign(playerTeam), 1, true);
     scene.add(player.holder);
     player.cockpit = buildCockpit(player.design, window.getUnits ? window.getUnits() : 'mph');   // drawn by drawFrame, in its own pass
     applyCameraView();
-    // grid: two staggered columns behind the start line, F1 style; you start at the back in a race
+    // grid: two staggered columns behind the start line, like a real Grand Prix; you start at the back in a race
     const slots = GRID;
     const place = (r, [back, side]) => {
         const s = sampleAt(trackLen + back);
@@ -282,8 +315,8 @@ function setupRace() {
         if (g && g.frames && g.frames.length) {
             ghost = makeRacer(teamDesign(playerTeam), 1, false);
             ghost.frames = g.frames; ghost.time = g.time;
-            ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
-            ghost.holder.visible = false; scene.add(ghost.holder);
+            ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o.material) { o.material = o.material.clone(); o.material.userData.ghostCopy = true; o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
+            ghost.holder.visible = false; ghost.shadowCaster.visible = false; scene.add(ghost.holder);
         }
     }
     if (efx) efx.clear();
@@ -384,20 +417,30 @@ function drivePlayer(dt) {
     if (r.v > vmax && onGrass) r.v -= (r.v - vmax) * Math.min(1, dt * 2);
     // turning, limited by grip: too fast into a corner and the car slides wide
     const wb = r.design.L * 0.6;
-    let yawRate = r.v * Math.tan(r.steer) / wb;
     // driving help 3: on the straights the steering is gentler, so a tap on the arrow at 200 mph doesn't throw the car
     // sideways; it sharpens up by itself as a corner arrives
     const bend = Math.max(Math.abs(s.ks), Math.abs(samples[(r.idx + 12) % N].ks), Math.abs(samples[(r.idx + 24) % N].ks));
-    const calm = help && !window.__autopilot ? Math.min(1, 0.36 + bend / 0.006) : 1;
-    const latAcc = Math.abs(yawRate * r.v), grip = playerGrip * (onGrass ? 0.7 : 1) * calm;
+    const assisted = help && !window.__autopilot;
+    const calm = assisted ? Math.min(1, 0.36 + bend / 0.006) : 1;
+    const grip = playerGrip * (onGrass ? 0.7 : 1) * calm;
+    // driving help 4: the front wheels never turn further than the tyres can grip at this speed, so holding an arrow
+    // down through a corner carries the car round it cleanly (no sliding, no squeal, no smoke), like a real driver
+    // feeding in just enough lock. Without the help, too much steering slides the car and scrubs off speed.
+    if (assisted && Math.abs(r.v) > 1) { const lim = Math.atan(grip * wb / (r.v * r.v)); if (Math.abs(r.steer) > lim) r.steer = Math.sign(r.steer) * lim; }
+    let yawRate = r.v * Math.tan(r.steer) / wb;
+    const latAcc = Math.abs(yawRate * r.v);
     // (holding the steering hard over scrubs off a little speed, but never much: with buttons you can only steer all or nothing)
-    if (latAcc > grip) { yawRate *= grip / latAcc; if (calm > 0.9) r.v -= Math.min((latAcc - grip) * 0.08, help ? 2.5 : 5) * dt * Math.sign(r.v); r.sliding = calm > 0.9 && latAcc > grip * 1.6; } else r.sliding = false;
+    if (latAcc > grip * 1.001) { yawRate *= grip / latAcc; if (calm > 0.9) r.v -= Math.min((latAcc - grip) * 0.08, 5) * dt * Math.sign(r.v); r.sliding = !assisted && latAcc > grip * 1.6; } else r.sliding = false;
+    if (r.sliding && r.v > 12 && go) r.slideTime = (r.slideTime || 0) + dt;      // (for testing)
     r.heading += yawRate * dt;
     r.x += Math.cos(r.heading) * r.v * dt; r.z -= Math.sin(r.heading) * r.v * dt;
     // barriers
     const prevIdx = r.idx; r.idx = nearestIndex(r);
     const s2 = samples[r.idx], lat2 = (r.x - s2.p.x) * s2.n.x + (r.z - s2.p.z) * s2.n.z, wall = (lat2 > 0 ? s2.wl : s2.wr) - 1.1;
-    if (Math.abs(lat2) > wall) {
+    const touching = Math.abs(lat2) > wall;
+    if (touching && !r.onWall && r.v > 8 && go) r.wallHits = (r.wallHits || 0) + 1;   // (counted for testing: each new touch of a barrier)
+    r.onWall = touching;
+    if (touching) {
         const push = Math.abs(lat2) - wall;
         r.x -= s2.n.x * push * Math.sign(lat2); r.z -= s2.n.z * push * Math.sign(lat2);
         let rel = r.heading - s2.heading; while (rel > Math.PI) rel -= Math.PI * 2; while (rel < -Math.PI) rel += Math.PI * 2;
@@ -476,17 +519,29 @@ function positionOf(r) {
     const all = [player, ...rivals].sort((a, b) => (a.finished ?? Infinity) - (b.finished ?? Infinity) || progressOf(b) - progressOf(a));
     return all.indexOf(r) + 1;
 }
+// Which rivals are drawn in full: only the few nearest the camera, and only within fullDetailAt() metres (a car already
+// drawn in full gets a few metres' head start, so two cars side by side don't keep swapping). In a bunched-up pack at
+// the first chicane this keeps a tablet from having to draw ten full cars at once.
+const MAX_FULL = { low: 2, medium: 3, high: 9 };
+let detailOrder = [];
+function chooseDetail() {
+    if (!camera) return;
+    const lim = fullDetailAt();
+    detailOrder = rivals.map(r => { const dx = r.x - camera.position.x, dz = r.z - camera.position.z; return { r, d: Math.sqrt(dx * dx + dz * dz) - (r.fullOn ? 4 : 0) }; }).sort((a, b) => a.d - b.d);
+    detailOrder.forEach((e, k) => { e.full = k < MAX_FULL[quality] && e.d < lim; });
+}
 function updateCars(dt) {
+    if (!(race && race.podium)) chooseDetail();
     for (const r of [player, ...rivals]) {
         const sy = samples[r.idx]; r.y = sy.p.y + sy.slope * ((r.x - sy.p.x) * sy.t.x + (r.z - sy.p.z) * sy.t.z);   // the road's height here
         r.holder.position.set(r.x, r.y, r.z);
         r.holder.rotation.y = r.heading;
         if (!r.isPlayer && camera) {
-            // rivals far up the road aren't drawn, and only those close by cast a full shadow (the rest keep their soft one)
-            const dx = r.x - camera.position.x, dz = r.z - camera.position.z, d2 = dx * dx + dz * dz, near = d2 < 50 * 50;
+            // rivals far up the road aren't drawn, and only those close by are drawn in full detail (with a margin, so a
+            // car just at the edge doesn't keep swapping)
+            const dx = r.x - camera.position.x, dz = r.z - camera.position.z, d2 = dx * dx + dz * dz, e = detailOrder.find(o => o.r === r);
             if (!(race && race.podium)) r.holder.visible = d2 < 420 * 420;
-            showDetail(r, d2 < 60 * 60 || !!(race && race.podium && !race.replay));
-            if (r.castOn !== near) { r.castOn = near; r.model.group.traverse(o => { if (o.isMesh) o.castShadow = near && o.material !== r.model.mats.spinBlur; }); }
+            showDetail(r, !!(e && e.full) || !!(race && race.podium && !race.replay));
         }
         r.wheelSpin += r.v * dt / r.design.wheel;
         for (const w of r.model.wheels) {
@@ -531,8 +586,8 @@ function setupGhostFromStore() {
     const g = store('ghost_' + TRACK.id, null); if (!g) return;
     if (!ghost) {
         ghost = makeRacer(teamDesign(playerTeam), 1, false);
-        ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
-        scene.add(ghost.holder);
+        ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o.material) { o.material = o.material.clone(); o.material.userData.ghostCopy = true; o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
+        ghost.shadowCaster.visible = false; scene.add(ghost.holder);
     }
     ghost.frames = g.frames; ghost.time = g.time; ghost.lapT0 = race.raceTime;
 }
@@ -956,7 +1011,7 @@ function startEngine() {
     const len = ctx.sampleRate, nb = ctx.createBuffer(1, len, ctx.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < len; i++) nd[i] = Math.random() * 2 - 1;
     const ns = ctx.createBufferSource(); ns.buffer = nb; ns.loop = true; const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1700; nf.Q.value = 6;
     const ng = ctx.createGain(); ng.gain.value = 0; ns.connect(nf); nf.connect(ng); ng.connect(master); ns.start();
-    engine.squeal = ng;
+    engine.squeal = ng; engine.noise = ns;
     if (!ev) loadSounds(ctx).then(() => {
         if (!engine || engine.ctx !== ctx || !soundBufs.v8 || !soundBufs.high) return;
         engine.low = loopSource(ctx, kind === 'v12' || kind === 'v10' || kind === 'v6h' ? soundBufs.v12 || soundBufs.v8 : soundBufs.v8, master, engine.presence);
@@ -1008,7 +1063,7 @@ function stopEngine() {
     if (!engine) return;
     const e = engine, t = e.ctx.currentTime; engine = null;
     if (e.fx) setTimeout(() => e.fx.stop(), 400);
-    try { e.master.gain.setTargetAtTime(0, t, 0.05); setTimeout(() => { try { e.master.disconnect(); e.o1.stop(); e.o2.stop(); if (e.low) { e.low.s.stop(); e.high.s.stop(); } } catch (err) { /* already stopped */ } }, 400); } catch (err) { /* already stopped */ }
+    try { e.master.gain.setTargetAtTime(0, t, 0.05); setTimeout(() => { try { e.master.disconnect(); e.o1.stop(); e.o2.stop(); e.noise.stop(); if (e.low) { e.low.s.stop(); e.high.s.stop(); } } catch (err) { /* already stopped */ } }, 400); } catch (err) { /* already stopped */ }
 }
 
 // =====================================================================
@@ -1053,7 +1108,11 @@ function watchFrameRate(dt) {
     fpsTime += dt; fpsFrames++;
     if (fpsTime < 4) return;
     const fps = fpsFrames / fpsTime; fpsTime = 0; fpsFrames = 0;
-    if (fps < 42 && quality !== 'low') { applyQuality(quality === 'high' ? 'medium' : 'low'); flash('Graphics set to ' + SC.QUALITY[quality].label + ' for smoother racing', 2200); }
+    if (fps < 42 && quality !== 'low') {
+        applyQuality(quality === 'high' ? 'medium' : 'low'); storeSet('autoLevel', quality);   // (remembered, so the next visit starts here)
+        flash('Graphics set to ' + SC.QUALITY[quality].label + ' for smoother racing', 2200);
+        fpsTime = -3;   // (a few seconds' grace: the change itself causes a short pause, which mustn't count)
+    }
 }
 function frame(now) {
     raf = requestAnimationFrame(frame);
@@ -1101,6 +1160,13 @@ function frame(now) {
 // =====================================================================
 //  CONTROLS (touch buttons with pointer events, keyboard, optional tilt)
 // =====================================================================
+// When the tablet goes to another app or the screen turns off, the race pauses and every sound stops (otherwise the
+// engine would carry on droning in the background)
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden || !race) return;
+    Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; });
+    if (race.phase !== 'done' && !race.paused) togglePause(); else stopEngine();
+});
 function bindControls() {
     document.querySelectorAll('[data-pad]').forEach(btn => {
         const key = btn.dataset.pad;
@@ -1110,7 +1176,7 @@ function bindControls() {
         btn.addEventListener('contextmenu', e => e.preventDefault());
     });
     const keys = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', Space: 'brake' };
-    window.addEventListener('keydown', e => { if (!isRacing()) return; if (keys[e.code]) { input[keys[e.code]] = true; e.preventDefault(); getAudioStart(); } if (e.code === 'KeyC') nextCamera(); if (e.code === 'Escape') togglePause(); });
+    window.addEventListener('keydown', e => { if (!isRacing()) return; if (keys[e.code]) { input[keys[e.code]] = true; e.preventDefault(); getAudioStart(); } if (e.code === 'KeyC') nextCamera(); if (e.code === 'Escape') togglePause(true); });
     window.addEventListener('keyup', e => { if (keys[e.code]) input[keys[e.code]] = false; });
     window.addEventListener('blur', () => { Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; }); });
 }
@@ -1125,8 +1191,14 @@ async function toggleTilt() {
     document.getElementById('race-tilt').classList.toggle('active', tiltOn);
 }
 const isRacing = () => !document.getElementById('race-stage').hidden;
-function togglePause() {
-    if (!race || race.phase === 'done') return;
+function togglePause(back = false) {
+    if (!race) return;
+    if (race.phase === 'done') {
+        if (!back) return;   // (the Back button after the finish: out of a replay, then back to the menu)
+        if (race.replay) { stopReplay(); document.getElementById('race-result').hidden = false; }
+        else if (race.podium || !document.getElementById('race-result').hidden) showMenu();
+        return;
+    }
     race.paused = !race.paused;
     document.getElementById('race-pause-panel').hidden = !race.paused;
     if (race.paused) stopEngine(); else startEngine();   // the engine comes back when you carry on racing
@@ -1253,6 +1325,7 @@ function init() {
     scene = new THREE.Scene();
     hemi = new THREE.HemisphereLight(0xcfe8ff, 0x4a5a3a, 0.7); scene.add(hemi);
     sun = new THREE.DirectionalLight(0xfff0d8, 2.8); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04;
+    sun.shadow.camera.layers.enable(1);   // (the cars' one-piece shadow casters live on layer 1: see makeRacer)
     scene.add(sun, sun.target);
     camera = new THREE.PerspectiveCamera(60, 1, 0.5, 2600);
     SC.setDetail(quality !== 'low');
@@ -1302,7 +1375,7 @@ export function start(opts) {
     difficulty = DIFF[opts.difficulty] ? opts.difficulty : 'medium';
     playerTeam = Math.max(0, Math.min(TEAMS.length - 1, opts.team ?? 5));
     onExit = opts.onExit || null;
-    if (opts.quality && opts.quality !== qualitySetting) { qualitySetting = opts.quality; storeSet('raceQuality', qualitySetting); applyQuality(qualitySetting === 'auto' ? SC.guessQuality() : qualitySetting); }
+    if (opts.quality && opts.quality !== qualitySetting) { qualitySetting = opts.quality; storeSet('raceQuality', qualitySetting); applyQuality(qualitySetting === 'auto' ? autoQuality() : qualitySetting); }
     const wk = WEATHERS[opts.weather] ? opts.weather : 'sunny', changed = wk !== weatherKind; weatherKind = wk;
     const fresh = TRACK !== opts.circuit;
     loadCircuit(opts.circuit);
@@ -1316,7 +1389,7 @@ export function stop() { if (race) showMenu(); }
 // for testing: drive automatically along the racing line
 export function autopilot(on) { window.__autopilot = on; }
 export function suspDebug() { const s = player && player.susp; return s && { pitch: +s.pitch.toFixed(4), roll: +s.roll.toFixed(4), heave: +s.heave.toFixed(4), heat: +s.heat.toFixed(2), bumps: s.bumps.map(b => +b.toFixed(3)), parts: s.corners.length || (s.links ? s.links.length : 0) }; }
-export function debug() { return { mode, phase: race && race.phase, lap: player && player.lap, idx: player && player.idx, v: player && player.v, pos: player && positionOf(player), best: player && player.best, rivals: rivals.map(r => [r.lap, Math.round(r.v)]), rivalLat: rivals.map(r => [+r.lat.toFixed(2), +r.latV.toFixed(2)]), trackLen, N, trees: world && world.trees, ghost: !!(ghost && ghost.holder.visible), slip: player && player.slip, time: timeOfDay, quality, shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, grassPct: player ? Math.round(100 * (player.grassTime || 0) / (player.driveTime || 1)) : 0, raceTime: race && race.raceTime }; }
+export function debug() { return { mode, phase: race && race.phase, lap: player && player.lap, idx: player && player.idx, v: player && player.v, pos: player && positionOf(player), best: player && player.best, rivals: rivals.map(r => [r.lap, Math.round(r.v)]), rivalLat: rivals.map(r => [+r.lat.toFixed(2), +r.latV.toFixed(2)]), trackLen, N, trees: world && world.trees, ghost: !!(ghost && ghost.holder.visible), slip: player && player.slip, time: timeOfDay, quality, shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, grassPct: player ? Math.round(100 * (player.grassTime || 0) / (player.driveTime || 1)) : 0, wallHits: player && (player.wallHits || 0), slideTime: player && +(player.slideTime || 0).toFixed(1), raceTime: race && race.raceTime }; }
 export function setHelp(on) { help = on; }
 // testing only: bump car k (0 = you, 1 = the first rival ...) on its 'front', 'rear', 'left' or 'right', as hard as sev (0 to 1)
 export function testHit(k = 0, where = 'front', sev = 0.8, colour = '#FFB300') {
@@ -1362,3 +1435,4 @@ function mapFrame() {
 }
 export function sceneForTest() { return scene; }   // testing only
 export function heightForTest() { return { d: Math.round(samples[player.idx].d), carY: +player.y.toFixed(2), roadY: +samples[player.idx].p.y.toFixed(2) }; }   // testing only
+export function gfxForTest() { return { renderer, scene, camera, sun, world }; }   // testing only

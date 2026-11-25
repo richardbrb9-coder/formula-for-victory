@@ -12,7 +12,7 @@ import { streakTexture, kerbTextures, steelTexture, blockTexture, wireTexture } 
 export const KERB_KS = 0.004;     // corners sharper than this get kerbs
 export const KERB_W = 1.3;        // how wide a kerb is (metres)
 const SPACING = 2;                // metres between samples
-const CHUNK = 100;                // samples per section of road (200 m)
+const CHUNK = 200;                // samples per section of road (400 m: fewer, longer pieces are quicker for a tablet to draw)
 
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const wrapAngle = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -193,7 +193,9 @@ export function buildTrackMeshes(T, GRID) {
 
     for (let i0 = 0; i0 < N; i0 += CHUNK) {
         const i1 = Math.min(N, i0 + CHUNK), mid = samples[Math.floor((i0 + i1) / 2) % N].p;
-        const add = (mesh, far) => { if (!mesh) return; group.add(mesh); if (far) lod.push({ o: mesh, c: mid, far }); return mesh; };
+        // (a section's far-away details are switched off by how far the NEAREST part of it is, measured every 40 m)
+        const along = []; for (let i = i0; i <= i1; i += 20) along.push(samples[i % N].p);
+        const add = (mesh, far) => { if (!mesh) return; group.add(mesh); if (far) lod.push({ o: mesh, c: mid, pts: along, far }); return mesh; };
         // the road, with a white line along each edge
         const road = new Geo();
         sweep(T, road, i0, i1, 1, s => [[s.hw, 0.02], [-s.hw, 0.02]], (q, d, off) => [off / 6, d / 6]);
@@ -290,7 +292,14 @@ export function buildTrackMeshes(T, GRID) {
 
     // far-away details are switched off (rubber marks, posts, fences): checked a few times a second
     let tick = 0;
-    const update = cam => { if (tick++ % 12) return; for (const l of lod) { const dx = l.c.x - cam.x, dz = l.c.z - cam.z; l.o.visible = dx * dx + dz * dz < l.far * l.far; } };
+    const update = cam => {
+        if (tick++ % 12) return;
+        for (const l of lod) {
+            let d2 = Infinity;
+            for (const p of l.pts || [l.c]) { const dx = p.x - cam.x, dz = p.z - cam.z; d2 = Math.min(d2, dx * dx + dz * dz); }
+            l.o.visible = d2 < l.far * l.far;
+        }
+    };
     return { group, lightMats, update, lod };
 }
 // a wall of old tyres bolted together, with a white belt round the middle (one picture, repeated along the wall)

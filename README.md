@@ -36,6 +36,9 @@ are listed as "coming soon".
 - Crash damage changes how a car looks, never how it drives. Weather never changes grip.
 - Everything saved on the device starts with `ffv_` (the owner's other apps share the same web address).
 - `sw.js`: bump `CACHE_NAME` on every change; it only ever deletes caches starting `formula-for-victory-`.
+- Keep the number of separate things drawn low (tablets): build scenery, then bake it with `SC.mergeStatic` (one mesh per
+  material), share materials between copies, and plant all of a circuit's trees in one `SC.plantTrees` call. Rivals are drawn
+  in full only when they are among the nearest few; each car's shadow comes from one simple shape on layer 1.
 
 ## Credits
 

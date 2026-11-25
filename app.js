@@ -179,8 +179,9 @@ document.getElementById('setup').addEventListener('click', e => {
 });
 let raceModule = null;
 function startRace(mode) {
+    const veil = document.getElementById('loading'); if (!veil.hidden) return;   // (a second tap while it is loading)
     getAudio(); playSound('rev');
-    const veil = document.getElementById('loading'); veil.hidden = false;
+    veil.hidden = false;
     // (two frames' grace, so the "warming up" message is on screen before the circuit is built)
     requestAnimationFrame(() => requestAnimationFrame(() => {
         (raceModule ? Promise.resolve(raceModule) : import('./race.js').then(m => (raceModule = window.__race = m)))
@@ -214,15 +215,53 @@ function renderCredits() {
 // =====================================================================
 //  TITLE PICTURE: a single-seater's silhouette and speed stripes, drawn in code
 // =====================================================================
-function drawCarShape(x, w) {   // a side view about 'w' wide, nose to the right, wheels on y = 0
+// A modern single-seater seen from the side, nose to the right: long low body, the airbox over the driver's head, the
+// halo, a shark fin running back to a tall rear wing, a wide front wing, and big wheels. Drawn in units where the car is
+// 100 long (about 5.6 m), wheels on y = 0, up negative. It is made up: no real team's car.
+function drawCarShape(x, w, col) {
     const u = w / 100;
-    x.beginPath();
-    x.moveTo(100 * u, -3 * u); x.lineTo(96 * u, -6 * u); x.lineTo(72 * u, -9 * u); x.lineTo(60 * u, -12 * u); x.lineTo(54 * u, -17 * u); x.lineTo(48 * u, -17 * u);
-    x.lineTo(44 * u, -24 * u); x.lineTo(34 * u, -24 * u); x.lineTo(26 * u, -15 * u); x.lineTo(10 * u, -13 * u); x.lineTo(10 * u, -26 * u); x.lineTo(0, -26 * u); x.lineTo(0, -19 * u);
-    x.lineTo(6 * u, -19 * u); x.lineTo(6 * u, -5 * u); x.lineTo(100 * u, -1 * u); x.closePath(); x.fill();
-    x.fillRect(88 * u, -5.5 * u, 13 * u, 2.2 * u);                                   // front wing
-    for (const cx of [20, 78]) { x.beginPath(); x.arc(cx * u, -7.5 * u, 7.5 * u, 0, Math.PI * 2); x.fill(); }
-    x.save(); x.lineWidth = 1.6 * u; x.strokeStyle = x.fillStyle; x.beginPath(); x.moveTo(40 * u, -24 * u); x.quadraticCurveTo(50 * u, -27 * u, 56 * u, -17 * u); x.stroke(); x.restore();   // the halo
+    x.save(); x.scale(u, u); x.lineJoin = x.lineCap = 'round';
+    const body = new Path2D();
+    body.moveTo(99.5, -2.4);                                                   // the tip of the nose
+    body.bezierCurveTo(92, -3.6, 84, -6.2, 74, -8.6);                          // the nose rising to the cockpit
+    body.lineTo(62, -10.6); body.quadraticCurveTo(58, -11.6, 55.5, -11.4);     // the cockpit's side
+    body.lineTo(47.5, -11.6);
+    body.bezierCurveTo(46.5, -14.5, 45, -17.2, 41.5, -17.4);                   // the airbox over the driver
+    body.lineTo(37.5, -17.2);
+    body.bezierCurveTo(30, -15.4, 20, -11, 9, -8.2);                           // the engine cover sloping down to the tail
+    body.lineTo(5, -7.4); body.lineTo(4, -3.2); body.lineTo(10, -1.6);         // the gearbox and diffuser
+    body.lineTo(24, -1.2); body.lineTo(26, -2.6);                              // the floor, under the sidepod
+    body.bezierCurveTo(31, -7.6, 52, -8.4, 66, -5.6);                          // the sidepod's lower edge and the undercut
+    body.lineTo(72, -3.4); body.lineTo(90, -2.1); body.closePath();
+    x.fillStyle = col.body; x.fill(body);
+    // the shark fin, the rear wing (two planes on a tall end plate) and its pylon
+    x.beginPath(); x.moveTo(40, -16.6); x.lineTo(11, -14.2); x.lineTo(9, -9.5); x.lineTo(26, -12.4); x.closePath(); x.fill();
+    x.beginPath(); x.moveTo(1.2, -19.6); x.lineTo(8.6, -19.6); x.lineTo(9.6, -7.2); x.lineTo(1.8, -5.2); x.closePath(); x.fill();
+    x.fillStyle = col.wing; x.beginPath(); x.moveTo(0, -19.4); x.lineTo(11, -19.2); x.lineTo(11.4, -17.4); x.lineTo(0.4, -17.2); x.closePath(); x.fill();
+    x.fillRect(1, -16.4, 10.2, 1.4);
+    // the front wing: end plate and three planes
+    x.fillStyle = col.body; x.beginPath(); x.moveTo(98, -6.2); x.lineTo(102.4, -6); x.lineTo(103, -0.7); x.lineTo(97, -0.7); x.closePath(); x.fill();
+    x.fillStyle = col.wing; for (const [y0, x0] of [[-1.5, 85], [-2.9, 88], [-4.2, 91.5]]) { x.beginPath(); x.moveTo(x0, y0 - 0.4); x.lineTo(102.5, y0 - 1.0); x.lineTo(102.5, y0 + 0.3); x.lineTo(x0, y0 + 0.6); x.closePath(); x.fill(); }
+    // suspension arms
+    x.strokeStyle = col.body; x.lineWidth = 0.7;
+    for (const [ax, ay, bx, by] of [[70, -5.2, 80, -6.2], [70, -8.4, 80, -7.4], [26, -4.5, 16, -6.4], [24, -9.5, 16, -7.6]]) { x.beginPath(); x.moveTo(ax, ay); x.lineTo(bx, by); x.stroke(); }
+    // the driver's helmet, and the halo arching over it
+    x.fillStyle = col.helmet; x.beginPath(); x.arc(51.2, -13.2, 2.7, Math.PI * 0.95, Math.PI * 2.05); x.fill();
+    x.strokeStyle = col.halo; x.lineWidth = 1.1; x.beginPath(); x.moveTo(59.5, -11); x.quadraticCurveTo(57.5, -16.6, 51, -16.8); x.quadraticCurveTo(47, -16.8, 46, -14.8); x.stroke();
+    x.lineWidth = 0.9; x.beginPath(); x.moveTo(57.6, -11.2); x.lineTo(56.2, -15.6); x.stroke();
+    // a thin light along the top of the body, and a coloured stripe along the side
+    x.strokeStyle = col.shine; x.lineWidth = 0.45;
+    x.beginPath(); x.moveTo(98.5, -2.9); x.bezierCurveTo(92, -4, 84, -6.4, 74, -8.8); x.lineTo(62, -10.8); x.stroke();
+    x.beginPath(); x.moveTo(44.6, -17.2); x.bezierCurveTo(30, -15.4, 20, -11.2, 9.5, -8.6); x.stroke();
+    x.strokeStyle = col.stripe; x.lineWidth = 0.9; x.beginPath(); x.moveTo(94, -3.2); x.bezierCurveTo(80, -5.4, 60, -9.2, 30, -9.4); x.stroke();
+    // the wheels: big fat tyres with a rim inside each one
+    for (const [cx, r] of [[80.5, 6.5], [16, 6.9]]) {
+        x.fillStyle = col.tyre; x.beginPath(); x.arc(cx, -r, r, 0, Math.PI * 2); x.fill();
+        x.strokeStyle = col.rim; x.lineWidth = 0.8; x.beginPath(); x.arc(cx, -r, r * 0.62, 0, Math.PI * 2); x.stroke();
+        x.fillStyle = col.rim; x.beginPath(); x.arc(cx, -r, r * 0.16, 0, Math.PI * 2); x.fill();
+        x.strokeStyle = col.shine; x.lineWidth = 0.5; x.beginPath(); x.arc(cx, -r, r - 0.4, Math.PI * 1.1, Math.PI * 1.6); x.stroke();
+    }
+    x.restore();
 }
 function drawTitleArt() {
     const c = document.getElementById('title-art'), w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
@@ -230,11 +269,22 @@ function drawTitleArt() {
     const x = c.getContext('2d'); x.scale(dpr, dpr);
     const g = x.createRadialGradient(w / 2, h * 0.45, 20, w / 2, h * 0.45, Math.max(w, h) * 0.7); g.addColorStop(0, 'rgba(225,6,0,.22)'); g.addColorStop(1, 'rgba(225,6,0,0)');
     x.fillStyle = g; x.fillRect(0, 0, w, h);
-    x.save(); x.translate(0, h * 0.86); x.transform(1, 0, -0.5, 1, 0, 0);
-    ['rgba(225,6,0,.5)', 'rgba(255,179,0,.4)', 'rgba(0,229,255,.3)'].forEach((col, i) => { x.fillStyle = col; x.fillRect(-w * 0.2, i * 13 - 30, w * 1.6, 7); });
+    const cw = Math.min(w * 0.86, 820), cx0 = (w - cw) / 2, ground = h * 0.93;
+    // speed streaks streaming back from the car (behind it, to the left)
+    x.save(); x.translate(0, ground);
+    ['rgba(225,6,0,.42)', 'rgba(255,179,0,.32)', 'rgba(0,229,255,.24)'].forEach((col, i) => {
+        const y = -cw * (0.035 + i * 0.045), len = cw * (0.75 - i * 0.12), gr = x.createLinearGradient(cx0 + cw * 0.3 - len, 0, cx0 + cw * 0.3, 0);
+        gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, col); x.fillStyle = gr; x.fillRect(cx0 + cw * 0.3 - len, y, len, Math.max(3, cw * 0.009));
+    });
     x.restore();
-    const cw = Math.min(w * 0.82, 760);
-    x.save(); x.translate((w - cw) / 2, h * 0.9); x.fillStyle = 'rgba(244,246,248,.07)'; drawCarShape(x, cw); x.restore();
+    // a soft shadow on the ground under the car
+    const sh = x.createRadialGradient(cx0 + cw * 0.5, ground, 4, cx0 + cw * 0.5, ground, cw * 0.5); sh.addColorStop(0, 'rgba(0,0,0,.45)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+    x.save(); x.translate(0, ground); x.scale(1, 0.06); x.fillStyle = sh; x.fillRect(cx0 - cw * 0.1, -cw * 0.5, cw * 1.2, cw); x.restore();
+    // (drawn solid on a layer of its own, then laid over the background see-through, so overlapping parts don't show seams)
+    const layer = document.createElement('canvas'); layer.width = c.width; layer.height = c.height;
+    const lx = layer.getContext('2d'); lx.scale(dpr, dpr); lx.translate(cx0, ground);
+    drawCarShape(lx, cw, { body: '#59545a', wing: '#7a777e', helmet: '#c98a00', halo: '#8a8890', shine: '#c9ccd2', stripe: '#e10600', tyre: '#050608', rim: '#6d6c72' });
+    x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 0.55; x.drawImage(layer, 0, 0); x.restore();
 }
 window.addEventListener('resize', drawTitleArt);
 drawTitleArt(); if (document.fonts) document.fonts.ready.then(drawTitleArt);

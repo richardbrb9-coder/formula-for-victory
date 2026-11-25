@@ -11,10 +11,13 @@ export const QUALITY = {
     medium: { label: 'Medium', pixelRatio: 1.1,  shadows: 1024, shadowSize: 60, density: 0.75 },
     high:   { label: 'High',   pixelRatio: 1.5,  shadows: 2048, shadowSize: 85, density: 1 }
 };
-// A first guess before we've measured the frame rate: tablets and phones start at medium
+// A first guess before we've measured the frame rate: tablets start at Medium, phones (small screens with a lot of
+// pixels, and less room to keep cool) at Low, computers at High. If the racing is still jerky, 'auto' steps down.
 export function guessQuality() {
     const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    return touch ? 'medium' : 'high';
+    if (!touch) return 'high';
+    const short = Math.min(screen.width || innerWidth, screen.height || innerHeight);
+    return short < 600 ? 'low' : 'medium';
 }
 
 // =====================================================================
@@ -127,6 +130,62 @@ export function canvasTex(w, h, draw, repeat = true) {
     return t;
 }
 export const rand = (a, b) => a + Math.random() * (b - a);
+
+// Bake finished scenery that never moves into as few pieces as possible: everything that shares a material becomes ONE
+// mesh (repeated parts are written out in full). A tablet pays for each separate thing it is asked to draw far more than
+// for the triangles in it, so a grandstand of twenty identical bays, drawn as one, is much quicker than twenty.
+// objs: objects already in place under the same parent (which must not be moved or turned). Returns a group to add.
+export function mergeStatic(objs) {
+    const byMat = new Map(), M = new THREE.Matrix4(), I = new THREE.Matrix4(), NM = new THREE.Matrix3(), v = new THREE.Vector3(), white = new THREE.Color(1, 1, 1), ic = new THREE.Color();
+    const out = new THREE.Group(); let far = 0, noProbe = true;
+    for (const root of objs) {
+        root.updateMatrixWorld(true);
+        const inv = root.parent ? new THREE.Matrix4().copy(root.parent.matrixWorld).invert() : new THREE.Matrix4();
+        far = Math.max(far, root.userData.far || 0); noProbe = noProbe && !!root.userData.noProbe;
+        root.traverse(o => {
+            if (!o.isMesh || !o.visible || Array.isArray(o.material)) return;
+            const n = o.isInstancedMesh ? o.count : 1;
+            if (!byMat.has(o.material)) byMat.set(o.material, { parts: [], cast: false, receive: false, order: 0 });
+            const e = byMat.get(o.material); e.cast = e.cast || o.castShadow; e.receive = e.receive || o.receiveShadow; e.order = Math.max(e.order, o.renderOrder);
+            for (let k = 0; k < n; k++) {
+                M.multiplyMatrices(inv, o.matrixWorld);
+                if (o.isInstancedMesh) { o.getMatrixAt(k, I); M.multiply(I); }
+                e.parts.push({ g: o.geometry, m: M.clone(), c: o.isInstancedMesh && o.instanceColor ? (o.getColorAt(k, ic), ic.clone()) : null });
+            }
+        });
+    }
+    for (const [mat, e] of byMat) {
+        const useCol = !!mat.vertexColors || e.parts.some(p => p.c), useUv = e.parts.every(p => p.g.attributes.uv);
+        let nv = 0, ni = 0; for (const p of e.parts) { nv += p.g.attributes.position.count; ni += p.g.index ? p.g.index.count : p.g.attributes.position.count; }
+        const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), uv = useUv ? new Float32Array(nv * 2) : null, col = useCol ? new Float32Array(nv * 3) : null;
+        const idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+        let vo = 0, io = 0;
+        for (const { g, m, c } of e.parts) {
+            const P = g.attributes.position, Nn = g.attributes.normal, U = g.attributes.uv, C = g.attributes.color, flip = m.determinant() < 0, t = c || white;
+            NM.getNormalMatrix(m);
+            for (let i = 0, j = vo; i < P.count; i++, j++) {
+                v.fromBufferAttribute(P, i).applyMatrix4(m); pos[j * 3] = v.x; pos[j * 3 + 1] = v.y; pos[j * 3 + 2] = v.z;
+                if (Nn) { v.fromBufferAttribute(Nn, i).applyMatrix3(NM).normalize(); nor[j * 3] = v.x; nor[j * 3 + 1] = v.y; nor[j * 3 + 2] = v.z; }
+                if (uv) { uv[j * 2] = U.getX(i); uv[j * 2 + 1] = U.getY(i); }
+                if (col) { col[j * 3] = (C ? C.getX(i) : 1) * t.r; col[j * 3 + 1] = (C ? C.getY(i) : 1) * t.g; col[j * 3 + 2] = (C ? C.getZ(i) : 1) * t.b; }
+            }
+            const count = g.index ? g.index.count : P.count, at = i => g.index ? g.index.getX(i) : i;
+            for (let i = 0; i < count; i += 3) { idx[io++] = vo + at(i); idx[io++] = vo + at(flip ? i + 2 : i + 1); idx[io++] = vo + at(flip ? i + 1 : i + 2); }
+            vo += P.count;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+        if (uv) geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        if (col) { geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); if (!mat.vertexColors) { mat.vertexColors = true; mat.needsUpdate = true; } }
+        geo.setIndex(new THREE.BufferAttribute(idx, 1)); geo.computeBoundingSphere();
+        const mesh = new THREE.Mesh(geo, mat); mesh.castShadow = e.cast; mesh.receiveShadow = e.receive; mesh.renderOrder = e.order;
+        out.add(mesh);
+    }
+    for (const root of objs) if (root.parent) root.parent.remove(root);
+    if (far) out.userData.far = far;
+    if (noProbe) out.userData.noProbe = true;
+    return out;
+}
 // Free CC0 textures from Poly Haven (polyhaven.com), saved in textures/ so they work offline
 const loader = new THREE.TextureLoader(), texCache = {};
 export let useDetailMaps = true;   // normal maps are skipped on Low quality
@@ -411,15 +470,20 @@ function crowdMat(k) {
     }
     return crowdMats[k];
 }
-export function grandstand(ctx, d, lateral, length = 70, rows = 8, roofColour = 0xE10600) {
-    const R = rows >= 9 ? 10 : 7, S = STANDS[R], bays = Math.max(1, Math.round(length / 10)), W = S.halfWidth * 2;
-    const st = new THREE.Group(), m = new THREE.Matrix4();
-    const mats = {
+// the grandstands' materials, shared by every stand with the same roof colour (so mergeStatic can draw them together)
+const standMatCache = {};
+function standMats(roofColour) {
+    const base = standMatCache.base || (standMatCache.base = {
         concrete: new THREE.MeshStandardMaterial({ color: 0xc9ccd1, vertexColors: true, roughness: 0.92 }),
         steel: new THREE.MeshStandardMaterial({ color: 0x59616e, vertexColors: true, metalness: 0.6, roughness: 0.45 }),
-        roof: snowRoof(new THREE.MeshStandardMaterial({ color: roofColour, vertexColors: true, metalness: 0.25, roughness: 0.5, side: THREE.DoubleSide })),
-        glass: new THREE.MeshStandardMaterial({ color: 0xa8c8dc, transparent: true, opacity: 0.28, roughness: 0.1, metalness: 0.2, depthWrite: false })
-    };
+        glass: new THREE.MeshStandardMaterial({ color: 0xa8c8dc, transparent: true, opacity: 0.28, roughness: 0.1, metalness: 0.2, depthWrite: false }),
+        wall: new THREE.MeshStandardMaterial({ color: 0xb4b8be, roughness: 0.92 })
+    });
+    return standMatCache[roofColour] || (standMatCache[roofColour] = { ...base, roof: snowRoof(new THREE.MeshStandardMaterial({ color: roofColour, vertexColors: true, metalness: 0.25, roughness: 0.5, side: THREE.DoubleSide })) });
+}
+export function grandstand(ctx, d, lateral, length = 70, rows = 8, roofColour = 0xE10600) {
+    const R = rows >= 9 ? 10 : 7, S = STANDS[R], bays = Math.max(1, Math.round(length / 10)), W = S.halfWidth * 2;
+    const st = new THREE.Group(), m = new THREE.Matrix4(), mats = standMats(roofColour);
     for (const name of Object.keys(S.parts)) {
         const mesh = new THREE.InstancedMesh(standPart(R, name), mats[name], bays);
         for (let b = 0; b < bays; b++) mesh.setMatrixAt(b, m.makeTranslation((b - (bays - 1) / 2) * W, 0, 0));
@@ -438,8 +502,7 @@ export function grandstand(ctx, d, lateral, length = 70, rows = 8, roofColour = 
     // end walls
     const top = S.front + R * S.rise, back = R * S.tread;
     for (const sgn of [1, -1]) {
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(0.3, top + 3.2, back + 0.6), mats.concrete.clone());
-        wall.material.vertexColors = false; wall.material.color.set(0xb4b8be);
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(0.3, top + 3.2, back + 0.6), mats.wall);
         wall.position.set(sgn * (bays * W / 2 + 0.15), (top + 3.2) / 2, (back + 0.6) / 2 - 0.25); wall.castShadow = wall.receiveShadow = true; st.add(wall);
     }
     placeBeside(ctx, st, d, lateral);   // rows climb away from the road (local +z)
@@ -473,8 +536,9 @@ export function pitBuilding(sections) {
             mesh.castShadow = name === 'wall' || name === 'roof'; mesh.receiveShadow = name !== 'lamp'; g.add(mesh);   // only the big parts cast shadows (cheaper)
         }
     }
+    const endMat = new THREE.MeshStandardMaterial({ color: 0xd9dce0, roughness: 0.85 });
     for (const sgn of [1, -1]) {         // end walls
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 9.2, 14.3), new THREE.MeshStandardMaterial({ color: 0xd9dce0, roughness: 0.85 }));
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 9.2, 14.3), endMat);
         wall.position.set(sgn * (sections * W / 2 + 0.2), 4.6, 7.15); wall.castShadow = wall.receiveShadow = true; g.add(wall);
     }
     return g;
