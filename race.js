@@ -330,7 +330,7 @@ function drivePlayer(dt) {
     if (Math.abs(input.tilt) > 0.05) steerIn = Math.max(-1, Math.min(1, input.tilt));
     let gas = input.gas, brake = input.brake;
     if (window.__kidbot) {                    // test driver: flat out, steers late with a slow reaction, never brakes
-        const tgt = sampleAt(samples[r.idx].d + 10);
+        const tgt = sampleAt(samples[r.idx].d + 10 + r.v * 0.25);
         let want = Math.atan2(-(tgt.p.z - r.z), tgt.p.x - r.x) - r.heading; while (want > Math.PI) want -= Math.PI * 2; while (want < -Math.PI) want += Math.PI * 2;
         r.botSteer = r.botSteer ?? 0; r.botT = (r.botT ?? 0) + dt;
         if (r.botT > 0.25) { r.botT = 0; r.botSteer = Math.abs(want) > 0.06 ? Math.sign(want) : 0; }
@@ -385,8 +385,13 @@ function drivePlayer(dt) {
     // turning, limited by grip: too fast into a corner and the car slides wide
     const wb = r.design.L * 0.6;
     let yawRate = r.v * Math.tan(r.steer) / wb;
-    const latAcc = Math.abs(yawRate * r.v), grip = playerGrip * (onGrass ? 0.7 : 1);
-    if (latAcc > grip) { yawRate *= grip / latAcc; r.v -= (latAcc - grip) * 0.08 * dt * Math.sign(r.v); r.sliding = true; } else r.sliding = false;
+    // driving help 3: on the straights the steering is gentler, so a tap on the arrow at 200 mph doesn't throw the car
+    // sideways; it sharpens up by itself as a corner arrives
+    const bend = Math.max(Math.abs(s.ks), Math.abs(samples[(r.idx + 12) % N].ks), Math.abs(samples[(r.idx + 24) % N].ks));
+    const calm = help && !window.__autopilot ? Math.min(1, 0.36 + bend / 0.006) : 1;
+    const latAcc = Math.abs(yawRate * r.v), grip = playerGrip * (onGrass ? 0.7 : 1) * calm;
+    // (holding the steering hard over scrubs off a little speed, but never much: with buttons you can only steer all or nothing)
+    if (latAcc > grip) { yawRate *= grip / latAcc; if (calm > 0.9) r.v -= Math.min((latAcc - grip) * 0.08, help ? 2.5 : 5) * dt * Math.sign(r.v); r.sliding = calm > 0.9 && latAcc > grip * 1.6; } else r.sliding = false;
     r.heading += yawRate * dt;
     r.x += Math.cos(r.heading) * r.v * dt; r.z -= Math.sin(r.heading) * r.v * dt;
     // barriers
@@ -574,7 +579,7 @@ function finishRace() {
     if (pos <= 3 && (!prev || pos < prev)) { medals[key] = pos; storeSet('medals', medals); }
     window.playSound && window.playSound(pos === 1 ? 'win' : 'lose');
     const el = document.getElementById('race-result'); el.className = 'race-panel';
-    const kicker = `${TRACK.name} · ${raceLaps()} laps · ${difficulty}`, title = pos === 1 ? 'You win!' : `You finished ${ordinal(pos)}`;
+    const kicker = `${TRACK.name} · ${raceLaps()} lap${raceLaps() === 1 ? "" : "s"} · ${difficulty}`, title = pos === 1 ? 'You win!' : `You finished ${ordinal(pos)}`;
     const actions = '<button class="big-btn" data-race="again">Race again</button><button class="act-btn" data-race="replay">🎬 Watch replay</button><button class="act-btn ghost" data-race="menu">Menu</button>';
     race.sheet = { kicker, title, extra: medal ? `<p class="rr-medal">${medal}</p>` : '', actions, more: '📋 Results' };
     const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td><span class="champ-dot" style="background:${row.colour}"></span>${escapeHtml(row.name)}</td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td></tr>`).join('');

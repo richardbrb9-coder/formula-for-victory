@@ -276,18 +276,27 @@ main { max-width: 1180px; margin: 0 auto; padding: 22px 22px 40px; padding-left:
     .install-btn { font-size: .78rem; padding: 8px 10px; }
     main { padding: 16px 14px 30px; }
 }
+/* phones: the buttons along the top are pictures only, so they fit in one row */
+@media (max-width: 900px) {
+    .race-top { flex-wrap: nowrap; gap: 5px; }
+    .race-top .opt span { display: none; }
+    .race-top .opt { padding: 8px 10px; font-size: .9rem; min-width: 40px; }
+    .race-top #race-units { font-size: .7rem; }
+}
 @media (max-width: 640px) {
     .race-map { height: 110px; }
-    .race-top .opt { padding: 7px 7px; font-size: .7rem; }
-    .race-corner { top: 92px; font-size: .68rem; }
-    .hud-left { top: 84px; } .hud-right { top: 84px; }
+    .race-corner { top: 56px; font-size: .68rem; }
+    .hud-left { top: 62px; } .hud-right { top: 66px; }
+    .hud-speed { bottom: 150px; }
+    .race-slip { bottom: 214px; }
+    .race-map { bottom: 150px; }
+    .units-btn { padding: 8px 8px; } .brand-mark { display: none; }
     .rr-box { padding: 18px 12px; } .rr-box h2 { font-size: 1.5rem; }
     .champ-table { font-size: .8rem; }
 }
 @media (max-height: 500px) {
     .race-map { height: 96px; width: auto; top: 96px; }
-    .race-top .opt { padding: 6px 8px; font-size: .72rem; }
-    .race-corner { top: 50px; }
+    .race-corner { top: 52px; }
     .title-wrap { min-height: 0; padding: 8px 0; }
     .title-logo { font-size: clamp(2rem, 7vw, 3.4rem); } .title-tag { margin: 8px auto 12px; font-size: .95rem; } .title-flag { margin-bottom: 8px; }
     .title-btns { flex-direction: row; justify-content: center; } .title-btns .big-btn { padding: 12px 30px; font-size: 1rem; }
