@@ -21,6 +21,8 @@ Las Vegas are listed as "coming soon".
 | `circuits/silverstone*.js` | Silverstone: the same three files. An old airfield: runways, the Wing, big run-offs, grass banks, hedges |
 | `circuits/monaco*.js` | Monaco: the same three files. A hilly street circuit: the town, the casino, the tunnel, the harbour |
 | `circuits/common.js` | Scenery parts Silverstone and Monaco share: grandstand lists, boards, a pit lane ribbon, the podium stand |
+| `backdrop.js` | The far distance: each circuit's photographed sky, painted horizon, haze, light and colour grade |
+| `tools/bake_sky.py` | Turns a Poly Haven sky photo (.hdr) into the two small pictures the game uses |
 | `formula.js`, `carmodel.js`, `cockpit.js`, `suspension.js`, `damage.js`, `effects.js`, `post.js`, `reflections.js`, `soundfx.js`, `weather.js`, `scenery.js`, `trackdetail.js`, `standdata.js` | Carried over from Supercar Legends (some trimmed) |
 | `sw.js`, `manifest.json`, `icon-*.png` | Installing and working offline |
 
@@ -34,6 +36,20 @@ Las Vegas are listed as "coming soon".
    hills or crosses itself on a bridge (see `monaco.js`: heights in metres at points round the lap, joined by slopes and
    rounded off). A street circuit also sets `tightWalls` (keeps the camera between the walls) and lists its `tunnels`.
 4. Write its scenery file, switch it on in `circuits/index.js`, and add its files to `sw.js`.
+5. Give it a `backdrop` (see `monaco.js` and the notes at the top of `backdrop.js`): which sky photo, the colour of the
+   haze, its light and colour grade, and the layers of its painted horizon (ridges, woods, fields, a town, the sea,
+   by compass bearing). A new sky photo is made with `tools/bake_sky.py` and listed in `SKIES` in `backdrop.js`, in
+   `sw.js` and in the credits. A circuit with no `backdrop` gets the plain day sky and haze.
+
+## The far distance and baked shading
+
+- The sky photo and the painted horizon are drawn together as one thing, last of all, so they only fill the part of the
+  screen where sky shows. The bottom of the sky, the foot of the painted hills and the fog are one colour, so the scenery
+  has no visible end. Ground must reach past the end of the fog (the grass and sea sheets do).
+- Colours in a `backdrop` are written as they should look on screen. Low graphics draws without the film effects, so its
+  fog colour is worked out differently (`fogColour` in `backdrop.js`); the sky photos have half-size copies for Low.
+- Soft shading is baked into colours, never worked out while racing: walls darken towards the pavement and under roofs
+  (`Quads.box` takes a `shade`), the crowd's back rows are darker, and every tree darkens towards the ground.
 
 ## Hills, tunnels and street circuits
 
@@ -58,4 +74,5 @@ Las Vegas are listed as "coming soon".
 ## Credits
 
 Circuit maps © OpenStreetMap contributors (ODbL). three.js (MIT). Fonts under the SIL Open Font Licence. Textures, skies
-and tree models from Poly Haven (CC0). Engine recordings from Wikimedia Commons (see the Credits screen for each one).
+and tree models from Poly Haven (CC0). Skies: Kloofendal 43d Clear, Farm Field, Qwantani Late Afternoon and Kloofendal
+Overcast (all Pure Sky versions) by Greg Zaal, Jarod Guest and Dimitrios Savva. Engine recordings from Wikimedia Commons (see the Credits screen for each one).

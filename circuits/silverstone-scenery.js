@@ -29,10 +29,11 @@ export function silverstoneScenery(ctx) {
     const { T, group, bounds } = ctx, { samples, trackLen } = T, L = trackLen;
 
     // --- the ground: one wide plain of grass, with low wooded country far away ---
-    const gw = bounds.maxX - bounds.minX + 2600, gd = bounds.maxZ - bounds.minZ + 2600;
+    // (the grass carries on well past where the haze swallows it; the fields and hedges beyond are painted on the horizon:
+    // see 'backdrop' in silverstone.js)
+    const gw = bounds.maxX - bounds.minX + 5200, gd = bounds.maxZ - bounds.minZ + 5200;
     const grass = new THREE.Mesh(new THREE.PlaneGeometry(gw, gd), SC.photoMat('leafy_grass', gw / 9, gd / 9, 0x9ad070));
     grass.rotation.x = -Math.PI / 2; grass.position.set((bounds.minX + bounds.maxX) / 2, -0.06, (bounds.minZ + bounds.maxZ) / 2); grass.receiveShadow = true; group.add(grass);
-    SC.hills(ctx, SC.THEMES.airfield.hills, 26);
 
     // --- the old airfield: three runways still cross the middle of the circuit, pale cracked concrete in the grass ---
     const concrete = new THREE.MeshStandardMaterial({ roughness: 0.95, side: THREE.DoubleSide, map: SC.canvasTex(256, 256, (x, w, h) => {
@@ -151,7 +152,7 @@ export function silverstoneScenery(ctx) {
 // shaped like an aircraft's wing that sweeps up to a point at one end. Built facing local -z, standing on the ground.
 function buildWing(g, concrete) {
     const { len, deep } = WING, H = 11, BAY = 10;
-    const front = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.25, side: THREE.DoubleSide, map: SC.canvasTex(256, 512, (x, w, h) => {
+    const front = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.25, side: THREE.DoubleSide, map: SC.canvasTex(256, 512, (x, w, h) => {
         // one 10 m bay, 11 m tall: the top two floors are glass, the bottom is a garage door
         x.fillStyle = '#e9ebee'; x.fillRect(0, 0, w, h);
         const glass = x.createLinearGradient(0, 0, 0, h * 0.6); glass.addColorStop(0, '#31506e'); glass.addColorStop(0.5, '#1b2f45'); glass.addColorStop(1, '#27425c');
@@ -166,8 +167,11 @@ function buildWing(g, concrete) {
     const panel = new THREE.MeshStandardMaterial({ color: 0xdfe2e6, roughness: 0.8, side: THREE.DoubleSide });
     const roofMat = new THREE.MeshStandardMaterial({ color: 0xf6f7f8, roughness: 0.6, metalness: 0, emissive: 0xdfe3e8, emissiveIntensity: 0.28, side: THREE.DoubleSide });   // (a little of its own light, so its edges are never tinted green by the grass) roofMat.userData.snowRoof = true;
     const dark = new THREE.MeshStandardMaterial({ color: 0x2a2f39, roughness: 0.6, metalness: 0.4 });
-    const f = new Quads(), p = new Quads(), r = new Quads(), ru = new Quads(), a = new Quads(), x0 = -len / 2, x1 = len / 2;
-    f.add([x1, 0, 0], [x0, 0, 0], [x1, H, 0], [x0, H, 0], [0, 0, len / BAY, 0, 0, 1, len / BAY, 1]);                      // the front, bay after bay
+    const f = new Quads(true), p = new Quads(), r = new Quads(), ru = new Quads(), a = new Quads(), x0 = -len / 2, x1 = len / 2;
+    // the front, bay after bay (with soft shade baked in: darker at its foot, and at the top under the wing's overhang)
+    { const lo = [0.66, 0.66, 0.66], mid = [1, 1, 1], hi = [0.68, 0.68, 0.7], hm = H * 0.55;
+      f.add([x1, 0, 0], [x0, 0, 0], [x1, hm, 0], [x0, hm, 0], [0, 0, len / BAY, 0, 0, 0.55, len / BAY, 0.55], [lo, lo, mid, mid]);
+      f.add([x1, hm, 0], [x0, hm, 0], [x1, H, 0], [x0, H, 0], [0, 0.55, len / BAY, 0.55, 0, 1, len / BAY, 1], [mid, mid, hi, hi]); }
     p.add([x0, 0, deep], [x1, 0, deep], [x0, H, deep], [x1, H, deep]);                                                  // the back
     p.add([x0, 0, 0], [x0, 0, deep], [x0, H, 0], [x0, H, deep]); p.add([x1, 0, deep], [x1, 0, 0], [x1, H, deep], [x1, H, 0]);   // the ends
     p.add([x0, H, 0], [x1, H, 0], [x0, H, deep], [x1, H, deep]);                                                        // the flat roof under the wing

@@ -17,7 +17,7 @@ void main() {
   gl_FragColor = vec4(c, 1.0); }`;
 const FINAL = `uniform sampler2D src; uniform sampler2D glow; uniform float glowAmt; uniform float blur; uniform float vignette; uniform float sat; uniform vec2 centre;
 uniform sampler2D depthTex; uniform float hasDepth; uniform float camNear; uniform float camFar; uniform float focus; uniform float dofAmt; uniform sampler2D soft;
-uniform vec2 sunUV; uniform float sunVis; uniform vec3 sunCol; uniform float aspect;
+uniform vec2 sunUV; uniform float sunVis; uniform vec3 sunCol; uniform float aspect; uniform vec3 grade;
 varying vec2 vUv;
 float viewDist(vec2 uv) { float z = texture2D(depthTex, uv).x * 2.0 - 1.0; return 2.0 * camNear * camFar / (camFar + camNear - z * (camFar - camNear)); }
 // a soft round blob for the lens flare's ghosts
@@ -54,8 +54,9 @@ void main() {
       c += vec3(1.0, 0.6, 0.9) * v * 0.035 * (blob(sunUV + axis * 2.05, 0.11) - blob(sunUV + axis * 2.05, 0.095));
     }
   }
-  // a gentle grade: a little more colour, then the same film tone curve the race always uses
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, sat);
+  // a gentle grade: each circuit's own tint (warm, cool, golden) and a little more colour, then the same film tone curve
+  // the race always uses
+  c *= grade; float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, sat);
   gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -86,7 +87,7 @@ export class Post {
         this.blurMat = mat(BLUR, { src: { value: null }, dir: { value: new THREE.Vector2() } });
         this.finalMat = mat(FINAL, { src: { value: null }, glow: { value: null }, glowAmt: { value: 0.55 }, blur: { value: 0 }, vignette: { value: 0.35 }, sat: { value: 1.08 }, centre: { value: new THREE.Vector2(0.5, 0.52) },
             depthTex: { value: this.hasDepth ? this.scene.depthTexture : null }, hasDepth: { value: this.hasDepth ? 1 : 0 }, camNear: { value: 0.5 }, camFar: { value: 2000 }, focus: { value: 20 }, dofAmt: { value: 0 }, soft: { value: null },
-            sunUV: { value: new THREE.Vector2() }, sunVis: { value: 0 }, sunCol: { value: new THREE.Color(1, 0.92, 0.8) }, aspect: { value: 1 } }, true);
+            sunUV: { value: new THREE.Vector2() }, sunVis: { value: 0 }, sunCol: { value: new THREE.Color(1, 0.92, 0.8) }, aspect: { value: 1 }, grade: { value: new THREE.Vector3(1, 1, 1) } }, true);
         this.w = 0; this.h = 0;
     }
     setSize(w, h) {
@@ -101,7 +102,8 @@ export class Post {
     begin() { this.renderer.setRenderTarget(this.scene); this.renderer.clear(); }
     pass(material, target) { this.quad.material = material; this.renderer.setRenderTarget(target); this.renderer.render(this.holder, this.cam); }
     // speedFrac 0..1 sets the motion blur; glow 0..1 its strength (stronger at night)
-    // opts: { camera, sun: { uv: Vector2, vis: 0..1, colour }, focus: metres (replays: the car being filmed) }
+    // opts: { camera, sun: { uv: Vector2, vis: 0..1, colour }, focus: metres (replays: the car being filmed),
+    //         grade: [r, g, b] the circuit's colour tint, sat: how colourful (1 = as drawn) }
     finish(speedFrac = 0, glow = 0.55, opts = {}) {
         const r = this.renderer, sw = this.a.width, sh = this.a.height;
         this.brightMat.uniforms.src.value = this.scene.texture; this.pass(this.brightMat, this.a);
@@ -123,6 +125,7 @@ export class Post {
         if (opts.camera) { u.camNear.value = opts.camera.near; u.camFar.value = opts.camera.far; }
         const sun = opts.sun; u.sunVis.value = sun ? sun.vis : 0; if (sun) { u.sunUV.value.copy(sun.uv); if (sun.colour) u.sunCol.value.copy(sun.colour); }
         u.src.value = this.scene.texture; u.glow.value = this.a.texture; u.glowAmt.value = glow;
+        u.grade.value.fromArray(opts.grade || [1, 1, 1]); u.sat.value = opts.sat ?? 1.08;
         u.blur.value = Math.max(0, (speedFrac - 0.45) / 0.55);
         this.pass(this.finalMat, null);
     }

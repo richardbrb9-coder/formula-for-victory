@@ -44,5 +44,20 @@ export const MONACO = {
     // corner names, shown as you reach them
     corners: [[185, 'Sainte Dévote'], [320, 'Beau Rivage'], [650, 'Massenet'], [870, 'Casino'], [1105, 'Mirabeau'], [1235, 'Grand Hotel Hairpin'], [1400, 'Portier'],
               [1520, 'The Tunnel'], [2070, 'Nouvelle Chicane'], [2355, 'Tabac'], [2500, 'Swimming Pool'], [2880, 'La Rascasse'], [2960, 'Anthony Noghès']],
-    scenery: monacoScenery
+    scenery: monacoScenery,
+    // The far distance (see backdrop.js): warm Mediterranean light. Steep limestone mountains behind the town with houses
+    // climbing their lower slopes, a headland along the coast each way, and the open sea on the harbour side.
+    backdrop: {
+        id: 'monaco', sky: 'riviera', haze: 0xe4e2d8, seaHaze: 0x8fb9d0,
+        looks: { sunny: { tint: [1.3, 1.36, 1.5], hazeTop: 8, sunEl: 43, sun: 3.0, sunColor: 0xfff0d2, hemi: 0.72, hemiSky: 0xc4dcff, hemiGround: 0x8a7a62, fog: [260, 1400], grade: [1.04, 1.0, 0.95], sat: 1.14 } },
+        horizon: { top: 26, bottom: -3, hazeTop: 2.5, layers: [
+            { kind: 'clouds', from: 240, to: 40, base: 14, height: 7, count: 9, seed: 2 },                                                                      // a few clouds sitting on the tops
+            { kind: 'ridge', from: 205, to: 58, height: 13, freq: 3, seed: 31, colour: 0x8793a6, haze: 0.6, sharp: 1.3, fade: 22 },                              // the Alps behind
+            { kind: 'ridge', from: 214, to: 48, height: 19, freq: 2, seed: 7, colour: 0xb3ab9a, haze: 0.3, sharp: 1.5, floor: 0.3, fade: 26, facets: 1.4 },      // the limestone cliffs above the town
+            { kind: 'town', from: 220, to: 42, height: 12, freq: 3, seed: 12, colour: 0x66794f, haze: 0.26, count: 900, cover: 0.62, size: 0.55, fade: 20 },     // scrubby slopes, with the upper town
+            { kind: 'ridge', from: 36, to: 66, height: 3.2, freq: 6, seed: 19, colour: 0x6f8366, haze: 0.45, fade: 14 },                                        // the headland up the coast
+            { kind: 'ridge', from: 188, to: 226, height: 3.5, freq: 6, seed: 23, colour: 0x6f8366, haze: 0.45, fade: 14 },                                      // the headland down the coast
+            { kind: 'sea', from: 52, to: 202 }
+        ] }
+    }
 };

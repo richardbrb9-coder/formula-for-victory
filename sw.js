@@ -1,4 +1,4 @@
-const CACHE_NAME = 'formula-for-victory-v4'; // Bump this on every change so tablets pick up the new version
+const CACHE_NAME = 'formula-for-victory-v5'; // Bump this on every change so tablets pick up the new version
 const CACHE_PREFIX = 'formula-for-victory-'; // Only this app's own caches are ever deleted: every app on richardbrb9-coder.github.io shares the same cache storage
 
 // Everything is stored inside the app (no CDNs), and all addresses are relative so it works in a GitHub Pages subfolder.
@@ -12,6 +12,7 @@ const CORE_FILES = [
     './track.js',
     './trackdetail.js',
     './scenery.js',
+    './backdrop.js',
     './standdata.js',
     './carmodel.js',
     './formula.js',
@@ -57,6 +58,14 @@ const EXTRA_FILES = [
     './textures/coast_sand_01_nor.webp',
     './textures/leafy_grass_col.webp',
     './textures/leafy_grass_nor.webp',
+    './skies/riviera.webp',
+    './skies/riviera_low.webp',
+    './skies/airfield.webp',
+    './skies/airfield_low.webp',
+    './skies/park.webp',
+    './skies/park_low.webp',
+    './skies/overcast.webp',
+    './skies/overcast_low.webp',
     './skies/day.webp',
     './skies/sunset.webp',
     './skies/night.webp',

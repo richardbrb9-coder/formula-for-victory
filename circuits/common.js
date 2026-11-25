@@ -8,23 +8,27 @@ export const wrapAngle = a => { while (a > Math.PI) a -= Math.PI * 2; while (a <
 export const wrapD = (d, L) => { d = ((d % L) + L) % L; return d > L / 2 ? d - L : d; };
 export const inZone = (d, a, b) => a <= b ? d >= a && d <= b : d >= a || d <= b;
 
-// collects four-cornered faces for one mesh (optionally each with its own colour)
+// collects four-cornered faces for one mesh (optionally each with its own colour, or a colour for each of its corners:
+// that is how soft shading is 'baked in' at no cost, darker at the foot of a wall or under a roof)
 export class Quads {
     constructor(colours = false) { this.pos = []; this.uv = []; this.idx = []; this.col = colours ? [] : null; }
     add(a, b, c, d, uv = [0, 0, 1, 0, 0, 1, 1, 1], colour = null) {
         const k = this.pos.length / 3; this.pos.push(...a, ...b, ...c, ...d); this.uv.push(...uv); this.idx.push(k, k + 2, k + 1, k + 1, k + 2, k + 3);
-        if (this.col) for (let i = 0; i < 4; i++) this.col.push(...(colour || [1, 1, 1]));
+        if (this.col) for (let i = 0; i < 4; i++) this.col.push(...(colour ? (Array.isArray(colour[0]) ? colour[i] : colour) : [1, 1, 1]));
     }
     // an upright box standing on (or sunk below) the ground: centre (x, z), turned by 'heading', from y0 up to y1.
     // uvFor(face, width, height) gives each face's part of the picture as [u0, v0, u1, v1]: faces 0 to 3 are the walls
-    // (front first: the one facing local -z), 4 is the top.
-    box(x, z, heading, w, dp, y0, y1, uvFor, colour = null, top = true) {
+    // (front first: the one facing local -z), 4 is the top. shade: [bottom, top, sides] darkens the walls' bottom and top
+    // edges and the two side walls by those amounts (1 = not at all).
+    box(x, z, heading, w, dp, y0, y1, uvFor, colour = null, top = true, shade = null) {
         const c = Math.cos(heading), s = Math.sin(heading), P = (lx, lz, y) => [x + lx * c + lz * s, y, z - lx * s + lz * c];
         const h = w / 2, e = dp / 2, corners = [[-h, -e], [h, -e], [h, e], [-h, e]];
         for (let f = 0; f < 4; f++) {
             const [ax, az] = corners[f], [bx, bz] = corners[(f + 1) % 4];
             const [u0, v0, u1, v1] = uvFor(f, f % 2 ? dp : w, y1 - y0);
-            this.add(P(bx, bz, y0), P(ax, az, y0), P(bx, bz, y1), P(ax, az, y1), [u0, v0, u1, v0, u0, v1, u1, v1], colour);
+            let col = colour;
+            if (shade && this.col) { const c = colour || [1, 1, 1], k = f % 2 ? shade[2] : 1, lo = c.map(v => v * shade[0] * k), hi = c.map(v => v * shade[1] * k); col = [lo, lo, hi, hi]; }
+            this.add(P(bx, bz, y0), P(ax, az, y0), P(bx, bz, y1), P(ax, az, y1), [u0, v0, u1, v0, u0, v1, u1, v1], col);
         }
         if (top) { const [u0, v0, u1, v1] = uvFor(4, w, dp); this.add(P(-h, -e, y1), P(h, -e, y1), P(-h, e, y1), P(h, e, y1), [u0, v0, u1, v0, u0, v1, u1, v1], colour); }
     }

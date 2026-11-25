@@ -11,6 +11,7 @@ import { kerbHeight } from './trackdetail.js';
 import { buildTrackData, buildTrackMeshes, KERB_KS, KERB_W } from './track.js';
 import { RaceSound } from './soundfx.js';
 import { Weather, WEATHERS, weatherLook } from './weather.js';
+import * as BD from './backdrop.js';
 import { Post } from './post.js';
 import { createCar, carStats, DEFAULT, applyPreset } from './carmodel.js';
 
@@ -43,7 +44,7 @@ function buildTrack(scene) {
         made.lod.push({ o, c: ball.center.clone(), far: Math.min(o.userData.far || 1e9, hazeEnd) + ball.radius });
     }
     scene.add(group);
-    return { lightMats: made.lightMats, group, trees: ctx.treeCount || 0, lod: made.lod, noProbe: group.children.filter(o => o.userData.noProbe), update: dt => { made.update(camera.position); extra.update(dt, { tunnel: tunnelNow, cam: camera.position }); } };
+    return { lightMats: made.lightMats, group, trees: ctx.treeCount || 0, lod: made.lod, noProbe: group.children.filter(o => o.userData.noProbe), setLook: extra.setLook, update: dt => { made.update(camera.position); extra.update(dt, { tunnel: tunnelNow, cam: camera.position }); } };
 }
 
 // =====================================================================
@@ -238,20 +239,21 @@ function sunOnScreen() {
     sunUV.set(sunTmp.x * 0.5 + 0.5, sunTmp.y * 0.5 + 0.5);
     return { uv: sunUV, vis, colour: timeOfDay === 'sunset' ? SUN_SUNSET : SUN_DAY };
 }
+// Medium and High graphics: the picture goes through the film-camera effects (glow, motion blur, grade); Low draws directly
+const filmEffects = () => quality !== 'low' && !window.__noPost && post !== false;
 function drawFrame() {
-    // Medium and High graphics: the picture goes through the film-camera effects (glow, motion blur, grade); Low draws directly
-    const usePost = quality !== 'low' && !window.__noPost;
+    const usePost = filmEffects();
     if (race) updateReflections();
     if (camMode === 3 && player && player.cockpit && quality !== 'low' && !(race && race.replay)) drawMirror();
     if (usePost) {
-        if (!post) { try { post = new Post(renderer); } catch (e) { post = false; } }
+        if (!post) { try { post = new Post(renderer); } catch (e) { post = false; if (world && TRACK) setAtmosphere(TRACK.theme); } }   // (without the effects the haze colour is worked out differently)
         if (post) { renderer.getDrawingBufferSize(postSize); post.setSize(postSize.x, postSize.y); post.begin(); }
     }
     drawScenes();
     if (usePost && post) {
         const glow = (timeOfDay === 'night' ? 0.85 : timeOfDay === 'sunset' ? 0.65 : 0.45) * (quality === 'high' ? 1 : 0.8);
         // (no motion blur from the driver's seat: the dashboard and the drops on the glass stay sharp)
-        post.finish(player && camMode !== 3 && !(race && race.replay) ? Math.abs(player.v) / player.perf.vmax : 0, glow, camMode === 3 ? { camera } : { camera, sun: sunOnScreen(), focus: race && race.replay && player ? camera.position.distanceTo(player.holder.position) : 0 });   // (not from the cockpit: its second pass replaces the depth picture)
+        post.finish(player && camMode !== 3 && !(race && race.replay) ? Math.abs(player.v) / player.perf.vmax : 0, glow, { grade: look && look.grade, sat: look && look.sat, ...(camMode === 3 ? { camera } : { camera, sun: sunOnScreen(), focus: race && race.replay && player ? camera.position.distanceTo(player.holder.position) : 0 }) });   // (not from the cockpit: its second pass replaces the depth picture)
     }
 }
 function drawScenes() {
@@ -919,7 +921,7 @@ function placeCamera(snap = false, dt = 0.016) {
     if (snap) { camPos.copy(want); camLook.copy(look); }
     else { const k = Math.min(1, dt * 6); camPos.lerp(want, k); camLook.lerp(look, Math.min(1, dt * 10)); }
     keepCameraInside();
-    if (camMode >= 2 && !window.__camAt && !window.__aerial && !window.__camRel && !window.__camSun) {
+    if (camMode >= 2 && !window.__camAt && !window.__aerial && !window.__camRel && !window.__camSun && !window.__camLook) {
         // bonnet and cockpit: fixed to the car, looking down the road (the cockpit view glances a little into corners)
         const ck = r.cockpit, eye = (camMode === 3 ? ck.eye : ck.bonnet).clone();
         const turn = camMode === 3 ? r.steer * 0.35 : 0;
@@ -937,6 +939,7 @@ function placeCamera(snap = false, dt = 0.016) {
     if (window.__camAt) { const c = window.__camAt, a = pathAt(c.d, c.lat, 0), b = pathAt(c.d2, c.lat2, 0); camPos.set(a.x, a.y + c.h, a.z); camLook.set(b.x, b.y + c.h2, b.z); }   // testing only
     else if (window.__camRel) { const [cx, cy, cz, lx = 0, ly = 0.4, lz = 0] = window.__camRel, c = Math.cos(r.heading), sn = Math.sin(r.heading); camPos.set(r.x + cx * c + cz * sn, r.y + cy, r.z - cx * sn + cz * c); camLook.set(r.x + lx * c + lz * sn, r.y + ly, r.z - lx * sn + lz * c); }   // testing only: a camera fixed beside the car
     else if (window.__camSun) { const d = sun.userData.dir; camPos.set(r.x - Math.cos(r.heading) * 7, r.y + 2.2, r.z + Math.sin(r.heading) * 7); camLook.set(camPos.x + d.x * 50 + window.__camSun * 20, camPos.y + d.y * 50 - 12, camPos.z + d.z * 50); }   // testing only: look towards the sun
+    else if (window.__camLook) { const [bearing, pitch = 0, h = 3] = window.__camLook, b = bearing * Math.PI / 180, e = pitch * Math.PI / 180; camPos.set(r.x, r.y + h, r.z); camLook.set(r.x + Math.sin(b) * Math.cos(e) * 100, r.y + h + Math.sin(e) * 100, r.z - Math.cos(b) * Math.cos(e) * 100); }   // testing only: look towards a compass bearing (to check the horizon)
     else if (window.__aerial) { camPos.set(r.x + window.__aerial * 0.6, r.y + window.__aerial, r.z + window.__aerial * 0.6); camLook.set(r.x, r.y, r.z); }   // testing only
     camera.position.copy(camPos);
     if (efx) { const [sx, sy] = efx.shakeOffset(r.v / r.perf.vmax, elapsed); camera.position.x += sx; camera.position.y += sy; }
@@ -1301,17 +1304,20 @@ function loadCircuit(c) {
 }
 // sky, haze, sun direction and reflections for a circuit's theme
 function setAtmosphere(theme) {
-    const th = look = weatherLook(SC.lookFor(theme, timeOfDay), weatherKind);
-    if (sky) { scene.remove(sky); sky.geometry.dispose(); sky.material.dispose(); }
-    sky = SC.makeSky(th); scene.add(sky);
-    const haze = SC.horizonColour(th);
-    scene.background = haze;
-    scene.fog = new THREE.Fog(haze, th.fog[0], th.fog[1]);
-    if (!SC.hasPhotoSky(th)) SC.whenSkyLoads(() => { if (TRACK && TRACK.theme === theme && look === th) setAtmosphere(theme); });
+    // (the circuit's own sky, horizon, haze and light, for this weather: see backdrop.js)
+    const th = look = BD.lookFor(TRACK, weatherLook(SC.lookFor(theme, timeOfDay), weatherKind)), low = quality === 'low';
+    if (sky) { scene.remove(sky); sky.material.dispose(); }
+    sky = BD.makeSky(th, low, () => { if (TRACK && TRACK.theme === theme && look === th) setAtmosphere(theme); }); scene.add(sky);   // (made again when its photo arrives)
+    // distant scenery fades into exactly the colour of the bottom of the sky, so there is no edge where it ends
+    const direct = !filmEffects();
+    scene.background = th.haze.clone();
+    scene.fog = new THREE.Fog(BD.fogColour(th, direct), th.fog[0], th.fog[1]);
+    if (world.setLook) world.setLook(th, direct);
     if (scene.environment) { const rt = scene.environment.userData.target; if (rt) rt.dispose(); else scene.environment.dispose(); }   // (the whole render target, or it stays in memory each time)
-    scene.environment = SC.makeEnvironment(renderer, th);
+    scene.environment = SC.makeEnvironment(renderer, th, low);
     scene.environmentIntensity = th.light.env;
     sun.intensity = th.light.sun; sun.color.set(th.light.sunColor); hemi.intensity = th.light.hemi;
+    hemi.color.set(th.light.hemiSky); hemi.groundColor.set(th.light.hemiGround);
     SC.setTreeLight(th);
     renderer.toneMappingExposure = th.light.exposure;
     if (headlight) headlight.visible = carGlow.visible = timeOfDay === 'night';
@@ -1359,6 +1365,7 @@ function applyWeatherToGround(kind) {
 // apply a quality level: sharpness and shadows
 function applyQuality(q) {
     if (probe && q !== quality) { probe.dispose(); probe = null; }   // (made again at the right size)
+    const skyChanges = (q === 'low') !== (quality === 'low');
     quality = q; SC.setDetail(q !== 'low');
     const Q = SC.QUALITY[q];
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, Q.pixelRatio));
@@ -1371,6 +1378,7 @@ function applyQuality(q) {
         const c = sun.shadow.camera; c.left = c.bottom = -Q.shadowSize; c.right = c.top = Q.shadowSize; c.near = 10; c.far = 400; c.updateProjectionMatrix();
     }
     [player, ...rivals].forEach(r => { if (r) r.blob.material.opacity = wantShadows ? 0.55 : 1; });
+    if (skyChanges && world && TRACK) setAtmosphere(TRACK.theme);   // (Low uses smaller sky pictures, and mixes its haze in differently)
     resize();
 }
 function init() {

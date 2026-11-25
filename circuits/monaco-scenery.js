@@ -8,6 +8,7 @@
 import * as THREE from '../lib/three.module.min.js';
 import * as SC from '../scenery.js';
 import { Geo, sweep } from '../track.js';
+import { seaFogColour } from '../backdrop.js';
 import { Quads, smooth, wrapD, inZone, buildStands, onStand, boards, ribbon } from './common.js';
 
 const PAVE = 3, QUAY = 4;                       // how wide the pavement behind the barrier is, and the quay beside the water
@@ -25,6 +26,7 @@ export function monacoScenery(ctx) {
     const at = d => T.sampleAt(d), wallOf = (s, side) => side > 0 ? s.wl : s.wr;
     const R = (a, b) => a + Math.random() * (b - a), pick = list => list[Math.floor(Math.random() * list.length)];
     const [t0, t1] = ctx.circuit.tunnels[0], TH = ctx.circuit.tunnelHeight;
+    const seaFog = { value: new THREE.Color(0x8fb9d0) };
 
     // =================================================================
     //  THE LIE OF THE LAND
@@ -47,6 +49,18 @@ export function monacoScenery(ctx) {
     // (flat places that are dug level into the slope: the swimming pool's terrace)
     const spot = (d, side, out) => { const p = T.pathAt(d, side * out, 0); return { x: p.x, y: p.y, z: p.z, heading: p.heading + (side > 0 ? Math.PI : 0) }; };
     const pads = [{ ...spot(POOL.at, -1, at(POOL.at).wr + POOL.out), w: POOL.len + 14, dp: POOL.wide + 12 }];
+    // (the ground is built out to LM metres beyond the track; over the last stretch it comes down to the level of the
+    // country beyond, so it never ends in a cliff)
+    // how far each spot is from the water (worked out once on a grid): close to the shore the land comes down to the sea
+    const TB = T.box, LM = 230, SG = 8, sx0 = TB.minX - LM - SG, sz0 = TB.minZ - LM - SG, snx = Math.ceil((TB.maxX - TB.minX + 2 * LM) / SG) + 3, snz = Math.ceil((TB.maxZ - TB.minZ + 2 * LM) / SG) + 3, shoreD = new Float32Array(snx * snz);
+    {
+        for (let j = 0; j < snz; j++) for (let i = 0; i < snx; i++) shoreD[j * snx + i] = inWater(sx0 + i * SG, sz0 + j * SG) ? 0 : 1e4;
+        const relax = (i, j, di, dj, w) => { const a = i + di, b = j + dj; if (a >= 0 && b >= 0 && a < snx && b < snz) { const v = shoreD[b * snx + a] + w; if (v < shoreD[j * snx + i]) shoreD[j * snx + i] = v; } };
+        for (let j = 0; j < snz; j++) for (let i = 0; i < snx; i++) { relax(i, j, -1, 0, SG); relax(i, j, 0, -1, SG); relax(i, j, -1, -1, SG * 1.414); relax(i, j, 1, -1, SG * 1.414); }
+        for (let j = snz - 1; j >= 0; j--) for (let i = snx - 1; i >= 0; i--) { relax(i, j, 1, 0, SG); relax(i, j, 0, 1, SG); relax(i, j, 1, 1, SG * 1.414); relax(i, j, -1, 1, SG * 1.414); }
+    }
+    const toShore = (x, z) => { const i = Math.round((x - sx0) / SG), j = Math.round((z - sz0) / SG); return i < 0 || j < 0 || i >= snx || j >= snz ? 1e4 : shoreD[j * snx + i]; };
+    const fromEdge = (x, z) => Math.min(x - TB.minX + LM, TB.maxX + LM - x, z - TB.minZ + LM, TB.maxZ + LM - z);
     function land(x, z, info) {
         let sw = 0, sy = 0, best = -1, bd = Infinity;
         for (const i of ix) { const p = samples[i].p, dx = x - p.x, dz = z - p.z, d2 = dx * dx + dz * dz, w = 1 / ((d2 + 90) * (d2 + 90)); sw += w; sy += w * p.y; if (d2 < bd) { bd = d2; best = i; } }
@@ -56,6 +70,8 @@ export function monacoScenery(ctx) {
         let y = sy / sw;
         if (lat > 0 && (s.d > 3040 || s.d < 1190)) y += Math.min(120, 0.2 * Math.max(0, dist - 42));     // the hillside behind the town
         if (lat > 0 && s.d > 2850 && s.d <= 3040) y += 46 * smooth(34, 120, dist);                      // the Rock
+        y = 0.6 + (y - 0.6) * smooth(0, 150, fromEdge(x, z));
+        y = Math.min(y, 1.5 + 0.75 * toShore(x, z));                                                    // a rocky bank down to the sea, not a wall
         for (const p of pads) { const c = Math.cos(p.heading), sn = Math.sin(p.heading), lx = (x - p.x) * c - (z - p.z) * sn, lz = (x - p.x) * sn + (z - p.z) * c; if (Math.abs(lx) < p.w / 2 + 6 && Math.abs(lz) < p.dp / 2 + 6) y = Math.min(y, p.y - 0.2); }
         roadsNear(x, z, r => { const dx = x - r.p.x, dz = z - r.p.z, reach = Math.max(r.wl, r.wr) + PAVE + 12; if (dx * dx + dz * dz < reach * reach) y = Math.min(y, r.p.y - 0.4); });
         return y;
@@ -71,10 +87,17 @@ export function monacoScenery(ctx) {
         }) }));
         sea.material.map.repeat.set(260, 260);
         sea.rotation.x = -Math.PI / 2; sea.position.set((b.minX + b.maxX) / 2, 0, (b.minZ + b.maxZ) / 2); sea.receiveShadow = true; group.add(sea);
+        // far out, the sea fades into its own hazy blue (not the pale haze of the sky), so there is a sea horizon; the
+        // painted horizon carries on in the same colour beyond the end of this sheet of water (see 'sea' in monaco.js)
+        sea.material.onBeforeCompile = sh => {
+            sh.uniforms.seaFog = seaFog;
+            sh.fragmentShader = sh.fragmentShader.replace('#include <fog_pars_fragment>', '#include <fog_pars_fragment>\nuniform vec3 seaFog;')
+                .replace('#include <fog_fragment>', '#ifdef USE_FOG\n\tgl_FragColor.rgb = mix( gl_FragColor.rgb, seaFog, smoothstep( fogNear, fogFar, vFogDepth ) );\n#endif');
+        };
     }
     // --- the land: a mesh of ground following the roads' heights, rising at its inland edges into the mountains behind the town ---
     {
-        const b = T.box, M = 230, CELL = 8, x0 = b.minX - M, z0 = b.minZ - M, nx = Math.ceil((b.maxX - b.minX + 2 * M) / CELL), nz = Math.ceil((b.maxZ - b.minZ + 2 * M) / CELL);
+        const b = T.box, M = LM, CELL = 8, x0 = b.minX - M, z0 = b.minZ - M, nx = Math.ceil((b.maxX - b.minX + 2 * M) / CELL), nz = Math.ceil((b.maxZ - b.minZ + 2 * M) / CELL);
         const pos = new Float32Array((nx + 1) * (nz + 1) * 3), col = new Float32Array((nx + 1) * (nz + 1) * 3), idx = [], info = {}, cx = (b.minX + b.maxX) / 2, cz = (b.minZ + b.maxZ) / 2;
         const c = new THREE.Color(), paving = new THREE.Color(0x77726a), town = new THREE.Color(0x746f66), scrub = new THREE.Color(0x5f7048), rock = new THREE.Color(0x857d70), seabed = new THREE.Color(0x35657c);
         for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
@@ -82,6 +105,7 @@ export function monacoScenery(ctx) {
             if (y < 0) c.copy(seabed);
             else {
                 c.copy(info.dist < 70 ? paving : town).lerp(scrub, smooth(150, 300, info.dist)).lerp(rock, smooth(30, 60, y - info.s.p.y) * 0.8);
+                if (info.dist > 40) c.lerp(rock, 0.7 * smooth(34, 6, toShore(x, z)));   // pale rock along the shore
                 c.offsetHSL(0, 0, (Math.random() - 0.5) * 0.05);
             }
             pos[k] = x; pos[k + 1] = y; pos[k + 2] = z; col[k] = c.r; col[k + 1] = c.g; col[k + 2] = c.b;
@@ -97,17 +121,21 @@ export function monacoScenery(ctx) {
             q.add([x0, y, z1 - 12], [x1, y, z1 - 12], [x0, y, z1 + far], [x1, y, z1 + far]);                                            // beyond the Rock, to the south
             const fm = q.mesh(new THREE.MeshStandardMaterial({ color: 0x6f7a5c, roughness: 1, side: THREE.DoubleSide })); fm.userData.always = true; group.add(fm);
         }
-        // the mountains behind the town: a high ridge round the landward side, fading into the haze
-        const seg = 64, mp = [], mc = [], mi = [], lowC = new THREE.Color(0x66755a), highC = new THREE.Color(0x9a978c);
+        // The hills behind the town: a long smooth slope round the landward side, climbing away into the haze. (The real
+        // mountains above it, the cliffs and the upper town are painted on the horizon: see 'backdrop' in monaco.js.)
+        const seg = 96, rings = [[470, 0], [760, 0.5], [1080, 0.85], [1500, 1], [1950, 0.5]], mp = [], mc = [], mi = [], lowC = new THREE.Color(0x6f7654), midC = new THREE.Color(0x5d7048), highC = new THREE.Color(0x7d8468);
         for (let i = 0; i <= seg; i++) {
-            const u = i / seg, a = 2.35 + u * 2.9, fade = smooth(0, 0.2, u) * smooth(0, 0.2, 1 - u);     // from the south-west, round by the north-west, to the north
-            const h = (230 + 85 * Math.sin(a * 5 + 1) + 50 * Math.sin(a * 11 + 2) + 28 * Math.sin(a * 23)) * (0.25 + 0.75 * fade), r = 860 + 70 * Math.sin(a * 4);
-            mp.push(cx + Math.cos(a) * 540, -6, cz + Math.sin(a) * 540, cx + Math.cos(a) * r, h, cz + Math.sin(a) * r, cx + Math.cos(a) * 1300, h * 0.72, cz + Math.sin(a) * 1300);
-            for (const cc of [lowC, highC, highC]) { c.copy(cc).offsetHSL(0, 0, (Math.random() - 0.5) * 0.04); mc.push(c.r, c.g, c.b); }
-            if (i < seg) { const q = i * 3; mi.push(q, q + 1, q + 3, q + 1, q + 4, q + 3, q + 1, q + 2, q + 4, q + 2, q + 5, q + 4); }
+            const u = i / seg, a = 2.35 + u * 2.9, fade = smooth(0, 0.16, u) * smooth(0, 0.16, 1 - u);   // from the south-west, round by the north-west, to the north
+            const h = (150 + 46 * Math.sin(a * 3 + 1) + 26 * Math.sin(a * 7 + 2) + 12 * Math.sin(a * 13)) * fade;
+            rings.forEach(([r, k], j) => {
+                const rr = r + 40 * Math.sin(a * 5 + j);
+                mp.push(cx + Math.cos(a) * rr, j ? h * k - 9 * (1 - fade) : -9, cz + Math.sin(a) * rr);   // (its two ends sink out of sight, below the sea)
+                c.copy(j < 2 ? lowC : j < 3 ? midC : highC).offsetHSL(0, 0, 0.03 * Math.sin(a * 17 + j * 2)); mc.push(c.r, c.g, c.b);
+                if (i < seg && j < rings.length - 1) { const q = i * rings.length + j; mi.push(q, q + 1, q + rings.length, q + 1, q + rings.length + 1, q + rings.length); }
+            });
         }
         const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.Float32BufferAttribute(mp, 3)); mg.setAttribute('color', new THREE.Float32BufferAttribute(mc, 3)); mg.setIndex(mi); mg.computeVertexNormals();
-        const mm = new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, flatShading: true, side: THREE.DoubleSide })); mm.userData.always = true; mm.userData.backdrop = true; group.add(mm);
+        const mm = new THREE.Mesh(mg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide })); mm.userData.always = true; mm.userData.backdrop = true; group.add(mm);
     }
 
     // =================================================================
@@ -178,10 +206,15 @@ export function monacoScenery(ctx) {
     const CLASSIC = [[1, 0.96, 0.86], [1, 0.87, 0.74], [0.98, 0.85, 0.62], [1, 0.85, 0.8], [1, 1, 0.97], [1, 0.93, 0.72], [0.97, 0.79, 0.67], [0.93, 0.9, 0.82]];
     const PALE = [[1, 1, 1], [0.94, 0.95, 0.96], [0.96, 0.93, 0.86], [0.9, 0.93, 0.95]], TILE = [0.8, 0.4, 0.27], FLAT = [0.6, 0.6, 0.58];
     // one building: a box of floors standing on the ground, with whatever is needed underneath to reach down to it
+    // Soft shading is baked into the walls' colours (it costs nothing to draw): down in the street, between tall
+    // buildings, less of the sky's light arrives, so walls darken towards the pavement; the narrow gaps between
+    // neighbours are darker still; and the top floor is shaded a little under the edge of the roof.
     function building(q, b) {
         const fh = b.fh || 3.2, bay = b.bay || 4, u0 = Math.floor(Math.random() * 4) / 4, uv = band => (f, w) => [u0, V0(band), u0 + Math.max(1, Math.round(w / bay)) / 4, V1(band)];
-        if (b.base < b.ground - 0.05) q.box(b.x, b.z, b.heading, b.w, b.dp, b.base, b.ground, uv(PLAIN), b.tint, false);
-        for (let f = 0; f < b.floors; f++) q.box(b.x, b.z, b.heading, b.w, b.dp, b.ground + f * fh, b.ground + (f + 1) * fh, uv(f === 0 ? b.groundFloor ?? SHOP : f === b.floors - 1 && b.top != null ? b.top : b.style), b.tint, false);
+        const deep = b.deep ?? 0.66, light = h => deep + (1 - deep) * smooth(0, b.reach || 13, h), side = b.sides ?? 1;
+        if (b.base < b.ground - 0.05) q.box(b.x, b.z, b.heading, b.w, b.dp, b.base, b.ground, uv(PLAIN), b.tint, false, [deep * 0.8, deep, side]);
+        for (let f = 0; f < b.floors; f++) q.box(b.x, b.z, b.heading, b.w, b.dp, b.ground + f * fh, b.ground + (f + 1) * fh, uv(f === 0 ? b.groundFloor ?? SHOP : f === b.floors - 1 && b.top != null ? b.top : b.style), b.tint, false,
+            [light(f * fh), light((f + 1) * fh) * (f === b.floors - 1 ? 0.86 : 1), side]);
         const top = b.ground + b.floors * fh, c = Math.cos(b.heading), s = Math.sin(b.heading), P = (lx, lz, y) => [b.x + lx * c + lz * s, y, b.z - lx * s + lz * c], h = b.w / 2, e = b.dp / 2;
         q.add(P(-h, -e, top), P(h, -e, top), P(-h, e, top), P(h, e, top), [0, V0(ROOF), b.w / 8, V0(ROOF), 0, V1(ROOF), b.w / 8, V1(ROOF)], b.roof || TILE);
         return top;
@@ -321,7 +354,7 @@ export function monacoScenery(ctx) {
             mark(footprint(p.x, p.z, p.heading, w, dp, 0.8));
             const floors = Math.round(R(zone.floors[0], zone.floors[1])), modern = zone.roof === FLAT || Math.random() < 0.2, style = pick(zone.style);
             let lo = Infinity; for (const [x, z] of pts) lo = Math.min(lo, land(x, z));
-            building(chunk('s' + Math.floor(mid / 420)), { x: p.x, z: p.z, heading: p.heading, w, dp, base: lo - 1, ground: Math.max(at(d).p.y, at(d + w).p.y) + 0.12, floors, style,
+            building(chunk('s' + Math.floor(mid / 420)), { x: p.x, z: p.z, heading: p.heading, w, dp, base: lo - 1, ground: Math.max(at(d).p.y, at(d + w).p.y) + 0.12, floors, style, sides: 0.6,
                 top: style === SHUTTER && Math.random() < 0.5 ? BALCONY : null, tint: pick(style === MODERN ? PALE : zone.tints), roof: style === MODERN || modern ? FLAT : TILE });
             d += w + (Math.random() < 0.14 ? R(4, 9) : R(0.2, 0.6));
         }
@@ -340,7 +373,7 @@ export function monacoScenery(ctx) {
             if (lo < 0.5) continue;
             const onRock = info.lat > 0 && info.s.d > 2850 && info.s.d <= 3040, style = onRock ? SHUTTER : pick([SHUTTER, BALCONY, MODERN, MODERN, BALCONY]);
             const floors = onRock ? Math.round(R(3, 4)) : Math.round(R(5, 9) + Math.min(8, info.dist / 34));
-            building(chunk('f' + Math.floor(px / 520) + '_' + Math.floor(pz / 520)), { x: px, z: pz, heading, w, dp, base: lo - 1, ground: hi + 0.1, floors, style, groundFloor: style === MODERN ? MODERN : PLAIN,
+            building(chunk('f' + Math.floor(px / 520) + '_' + Math.floor(pz / 520)), { x: px, z: pz, heading, w, dp, base: lo - 1, ground: hi + 0.1, floors, style, groundFloor: style === MODERN ? MODERN : PLAIN, deep: 0.5, reach: 18,
                 tint: pick(style === MODERN ? PALE : CLASSIC), roof: style === MODERN ? FLAT : TILE });
         }
     }
@@ -429,6 +462,7 @@ export function monacoScenery(ctx) {
     boards(ctx, { braking: BRAKING, every: 64, gap: 0.75, maxBend: 0.004, skip: (d, side) => at(d).roofed || inZone(d, t0 - 30, t1 + 30) || onStand(STANDS, L, d, side, 0) || inZone(d, 3040, 60) });
 
     return {
+        setLook(look, direct) { seaFog.value.copy(seaFogColour(look, direct)); },   // (the sea's haze changes with the weather)
         // the white light across the tunnel's mouths: from inside, the daylight outside is dazzling; it clears as you reach it
         update(dt, state) {
             for (const g of glare) {

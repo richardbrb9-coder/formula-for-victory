@@ -32,10 +32,11 @@ export function monzaScenery(ctx) {
     const wallAt = (s, side) => side > 0 ? s.wl : s.wr;
 
     // --- the ground, and the Alps far away to the north ---
-    const { bounds } = ctx, gw = bounds.maxX - bounds.minX + 2400, gd = bounds.maxZ - bounds.minZ + 2400;
+    // (the grass carries on well past where the haze swallows it; the far woods and the Alps are painted on the horizon:
+    // see 'backdrop' in monza.js)
+    const { bounds } = ctx, gw = bounds.maxX - bounds.minX + 5200, gd = bounds.maxZ - bounds.minZ + 5200;
     const grass = new THREE.Mesh(new THREE.PlaneGeometry(gw, gd), SC.photoMat('leafy_grass', gw / 9, gd / 9, 0x8fd06a));
     grass.rotation.x = -Math.PI / 2; grass.position.set((bounds.minX + bounds.maxX) / 2, -0.06, (bounds.minZ + bounds.maxZ) / 2); grass.receiveShadow = true; group.add(grass);
-    SC.hills(ctx, SC.THEMES.park.hills, 85);
 
     // --- the pits and paddock: a wide apron of asphalt, the pit lane's lines, the pit building and the podium ---
     {
@@ -165,7 +166,7 @@ export function monzaScenery(ctx) {
             const px = x + Math.random() * cell, pz = z + Math.random() * cell;
             if (blocked(px, pz)) continue;
             const close = T.near(px, pz).dist < 70;
-            spots.push({ x: px, z: pz, size: SC.rand(1.7, 2.7), shadow: close });
+            spots.push({ x: px, z: pz, size: SC.rand(1.7, 2.7), shadow: close, shade: close ? 1 : SC.rand(0.66, 0.84) });   // (trees deeper in the wood are in each other's shade)
         }
         // all planted at once: one drawing for each kind of tree (each tree is only a flat picture, so the thousands out of
         // sight cost far less than asking the tablet to draw dozens of separate patches of wood)

@@ -2,6 +2,7 @@
 // and the scenery for each circuit. Made in code plus a few saved pictures (skies, trees, textures), so it works offline.
 import * as THREE from './lib/three.module.min.js';
 import { STANDS, PITS, BRIDGE } from './standdata.js';
+import { makeSky } from './backdrop.js';
 
 // =====================================================================
 //  QUALITY LEVELS (chosen automatically, or by the player in the race menu)
@@ -21,7 +22,7 @@ export function guessQuality() {
 }
 
 // =====================================================================
-//  SKY (a big sphere around the camera: gradient, sun and soft clouds)
+//  THEMES: the plain light and colours for each kind of place, by time of day
 // =====================================================================
 export const THEMES = {
     coast:  { top: 0x2f7fd6, horizon: 0xbfe0f5, sun: [0.55, 0.42, -0.72], fog: [260, 1500], ground: 0x4a8a3c, hills: 0x5f7f6a },
@@ -37,82 +38,18 @@ export const THEMES = {
 // Time of day changes the colours, sun height and light strength of any theme
 export const TIMES = { day: 'Day', sunset: 'Sunset', night: 'Night' };
 export function lookFor(themeKey, time = 'day') {
-    const t = { ...THEMES[themeKey], time, light: { sun: 2.8, sunColor: 0xfff0d8, hemi: 0.7, env: 0.9, exposure: 1.05 }, clouds: themeKey === 'city' ? 0.5 : 0.8, stars: 0, glow: 0 };
+    const t = { ...THEMES[themeKey], baseFog: THEMES[themeKey].fog, time, light: { sun: 2.8, sunColor: 0xfff0d8, hemi: 0.7, env: 0.9, exposure: 1.05 }, clouds: themeKey === 'city' ? 0.5 : 0.8, stars: 0, glow: 0 };
     if (time === 'sunset') Object.assign(t, { top: 0x3a4f8c, horizon: 0xf2a65a, sun: [t.sun[0], 0.08, t.sun[2]], fog: [t.fog[0] * 0.9, t.fog[1] * 0.9],
         light: { sun: 2.2, sunColor: 0xffb070, hemi: 0.5, env: 0.75, exposure: 1.1 }, clouds: 0.6, glow: 0.4 });
     if (time === 'night') Object.assign(t, { top: 0x05070f, horizon: 0x1a2236, sun: [-t.sun[0], 0.35, -t.sun[2]], fog: [t.fog[0] * 0.5, t.fog[1] * 0.45],
         light: { sun: 0.5, sunColor: 0x9fb4ff, hemi: 0.32, env: 0.45, exposure: 1.25 }, clouds: 0.15, stars: 1, glow: 1 });
     return t;
 }
-const SKY_VERT = `varying vec3 vDir; void main() { vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-const SKY_FRAG = `
-uniform vec3 top; uniform vec3 horizon; uniform vec3 sunDir; uniform float clouds; uniform float stars; uniform float night;
-varying vec3 vDir;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float noise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y); }
-float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
-void main() {
-  vec3 d = normalize(vDir); float h = d.y;
-  vec3 col = mix(horizon, top, pow(clamp(h, 0.0, 1.0), 0.55));
-  if (h < 0.0) col = horizon * 0.92;
-  float s = max(dot(d, normalize(sunDir)), 0.0);
-  vec3 sunCol = mix(vec3(1.0, 0.92, 0.75), vec3(0.85, 0.9, 1.0), night);
-  col += sunCol * (pow(s, 900.0) * 3.0 * (1.0 - night * 0.6) + pow(s, 12.0) * 0.25 * (1.0 - night));
-  if (stars > 0.0 && h > 0.05) { vec2 g = floor(d.xz / (h + 0.3) * 260.0); float st = step(0.997, hash(g)); col += vec3(st) * stars * 0.9; }
-  if (h > 0.02 && clouds > 0.0) {
-    vec2 uv = d.xz / (h + 0.12) * 1.6;
-    float c = smoothstep(0.52, 0.78, fbm(uv + vec2(3.7, 1.1)));
-    col = mix(col, mix(vec3(1.0) * (0.92 + 0.08 * s), horizon * 0.6, night), c * clouds * smoothstep(0.02, 0.2, h));
-  }
-  gl_FragColor = vec4(col, 1.0);
-}`;
-// Photographed skies (free CC0 skies from Poly Haven, shrunk and saved in skies/ so they work offline).
-// They load in the background; until they arrive (or if they can't load) the drawn sky above is used.
-const SKY_FILES = { day: 'skies/day.webp', sunset: 'skies/sunset.webp', night: 'skies/night.webp' };
-const photoSkies = {}, skyWaiters = [];
-for (const [time, url] of Object.entries(SKY_FILES)) {
-    photoSkies[time] = { tex: null, sunU: 0.25, horizon: null };
-    new THREE.TextureLoader().load(url, tex => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        // measure the photo once: where its sun (brightest spot) is, and the colour just above the horizon (for the haze)
-        const img = tex.image, c = document.createElement('canvas'); c.width = 256; c.height = 128;
-        const x = c.getContext('2d'); x.drawImage(img, 0, 0, 256, 128);
-        const d = x.getImageData(0, 0, 256, 128).data; let best = -1, bu = 0.25, r = 0, g = 0, b = 0;
-        for (let j = 20; j < 62; j++) for (let i = 0; i < 256; i++) { const k = (j * 256 + i) * 4, l = d[k] + d[k + 1] + d[k + 2]; if (l > best) { best = l; bu = i / 256; } }
-        for (let i = 0; i < 256; i++) { const k = (60 * 256 + i) * 4; r += d[k]; g += d[k + 1]; b += d[k + 2]; }
-        photoSkies[time] = { tex, sunU: bu, horizon: new THREE.Color().setRGB(r / 256 / 255, g / 256 / 255, b / 256 / 255, THREE.SRGBColorSpace) };
-        skyWaiters.splice(0).forEach(f => f());
-    });
-}
-// call f once a photo sky that wasn't ready yet has arrived (so the race can swap the drawn sky for the photo)
-export function whenSkyLoads(f) { skyWaiters.push(f); }
-export function hasPhotoSky(t) { return !!t.weather || !!(photoSkies[t.time] && photoSkies[t.time].tex); }   // (rain and snow use the drawn overcast sky)
-// the haze colour that blends the distant scenery into the sky
-export function horizonColour(t) { const p = photoSkies[t.time]; return !t.weather && p && p.horizon ? p.horizon.clone() : new THREE.Color(t.horizon); }
-export function makeSky(t) {
-    const photo = photoSkies[t.time];
-    if (!t.weather && photo && photo.tex) {
-        const sky = new THREE.Mesh(new THREE.SphereGeometry(2000, 48, 24),
-            new THREE.MeshBasicMaterial({ map: photo.tex, side: THREE.BackSide, depthWrite: false, fog: false, toneMapped: false }));
-        // turn the photo so its sun sits where the scene's sunlight comes from
-        const a = photo.sunU * Math.PI * 2, ax = -Math.cos(a), az = Math.sin(a);
-        sky.rotation.y = Math.atan2(t.sun[0], t.sun[2]) - Math.atan2(ax, az);
-        sky.renderOrder = -1; sky.frustumCulled = false;
-        return sky;
-    }
-    const mat = new THREE.ShaderMaterial({
-        uniforms: { top: { value: new THREE.Color(t.top) }, horizon: { value: new THREE.Color(t.horizon) },
-                    sunDir: { value: new THREE.Vector3(...t.sun).normalize() }, clouds: { value: t.clouds }, stars: { value: t.stars }, night: { value: t.stars } },
-        vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, side: THREE.BackSide, depthWrite: false, fog: false });
-    const sky = new THREE.Mesh(new THREE.SphereGeometry(2000, 32, 16), mat);
-    sky.renderOrder = -1; sky.frustumCulled = false;
-    return sky;
-}
+// The sky itself, the painted horizon in front of it and each circuit's own light are in backdrop.js.
 // Reflections for the cars' paint: the sky and the ground, blurred into an environment map
-export function makeEnvironment(renderer, t) {
+export function makeEnvironment(renderer, t, low = false) {
     const env = new THREE.Scene();
-    env.add(makeSky(t));
+    env.add(makeSky(t, low));
     // (the ground is mostly grey road and run-off near a car, with only a little of the grass colour, so paint isn't tinted green)
     const ground = new THREE.Mesh(new THREE.CircleGeometry(1900, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x4a4d52).lerp(new THREE.Color(t.ground), 0.3).multiplyScalar(t.stars ? 0.15 : 1) }));
     ground.material.toneMapped = false;
@@ -267,21 +204,6 @@ export function ground(ctx, color) {
     g.rotation.x = -Math.PI / 2; g.position.set((bounds.minX + bounds.maxX) / 2, -0.02, (bounds.minZ + bounds.maxZ) / 2);
     g.receiveShadow = true; ctx.group.add(g);
 }
-// a ring of low hills far away, softened by the haze
-export function hills(ctx, color, height = 60) {
-    const { bounds } = ctx, cx = (bounds.minX + bounds.maxX) / 2, cz = (bounds.minZ + bounds.maxZ) / 2;
-    const R = Math.hypot(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2 + 380, seg = 160, pos = [], idx = [];
-    const phase = [rand(0, 6), rand(0, 6), rand(0, 6)];
-    for (let i = 0; i <= seg; i++) {
-        const a = i / seg * Math.PI * 2;
-        const hgt = height * (0.45 + 0.3 * Math.sin(a * 3 + phase[0]) + 0.2 * Math.sin(a * 7 + phase[1]) + 0.1 * Math.sin(a * 17 + phase[2]));
-        const r1 = R, r2 = R + 220;
-        pos.push(cx + Math.cos(a) * r1, -1, cz + Math.sin(a) * r1, cx + Math.cos(a) * (r1 + 90), hgt, cz + Math.sin(a) * (r1 + 90), cx + Math.cos(a) * r2, hgt * 0.7, cz + Math.sin(a) * r2);
-        if (i < seg) { const b = i * 3; idx.push(b, b + 3, b + 1, b + 1, b + 3, b + 4, b + 1, b + 4, b + 2, b + 2, b + 4, b + 5); }
-    }
-    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
-    ctx.group.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color, roughness: 1, flatShading: true, side: THREE.DoubleSide })));
-}
 // two kinds of tree (pine and round), in varied greens; they cast shadows
 // Trees are "impostors": real tree models (free CC0 models from Poly Haven) photographed in Blender from 8 directions
 // around them. In the race each tree is one flat picture that turns to face you and shows the view from your side,
@@ -309,8 +231,11 @@ function treeMaterial(name) {
     const map = loader.load(`trees/${name}.webp`); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
     const mat = new THREE.MeshBasicMaterial({ map, alphaTest: 0.42, side: THREE.DoubleSide, toneMapped: false, color: treeTint });
     mat.onBeforeCompile = sh => {
+        // soft shade under the leaves, at no cost: every tree darkens towards the ground, so a wood looks deep and solid
+        sh.fragmentShader = 'varying float vTreeH;\n' + sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n\tdiffuseColor.rgb *= 0.5 + 0.5 * smoothstep(0.02, 0.5, vTreeH);');
         // pick the picture taken from the direction we're looking from (each tree also gets its own turn, from its position)
-        sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+        sh.vertexShader = 'varying float vTreeH;\n' + sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+            vTreeH = uv.y;
             vec3 iC = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
             vec3 toCam = cameraPosition - iC;
             float turn = fract(sin(dot(iC.xz, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
@@ -353,7 +278,7 @@ export function plantTrees(ctx, spots, mix, shadowsToo = true) {
         list.forEach((sp, i) => {
             const S = T.frame * T.grow * sp.size;
             m.makeScale(S, S, S).setPosition(sp.x, (sp.y || 0) - T.bottom * T.grow * sp.size - S * 0.025, sp.z); mesh.setMatrixAt(i, m);   // (sunk a touch, so the roots are in the ground)
-            mesh.setColorAt(i, col.setHSL(0.28, 0.1, rand(0.42, 0.55)).multiplyScalar(1.9));   // a little variety in shade
+            mesh.setColorAt(i, col.setHSL(0.28, 0.1, rand(0.42, 0.55)).multiplyScalar(1.9 * (sp.shade ?? 1)));   // a little variety in shade (shade: darker, for trees deep inside a wood)
             if (sp.shadow !== false) shadows.push([sp.x, sp.z, S * (name.startsWith('fir') ? 0.32 : 0.42), sp.y || 0]);
         });
         mesh.computeBoundingSphere(); mesh.raycast = () => {}; ctx.group.add(mesh);
@@ -498,12 +423,13 @@ export function grandstand(ctx, d, lateral, length = 70, rows = 8, roofColour = 
     }
     // the crowd: one strip of spectators per row in each section, in three different mixes
     const stripW = W - S.aisle * 2, stripH = 1.953, byMix = [[], [], []];
-    for (let b = 0; b < bays; b++) for (let r = 0; r < R; r++) byMix[Math.floor(Math.random() * 3)].push([(b - (bays - 1) / 2) * W, S.front + (r + 1) * S.rise + 0.353 + stripH / 2, r * S.tread + 0.5]);
+    for (let b = 0; b < bays; b++) for (let r = 0; r < R; r++) byMix[Math.floor(Math.random() * 3)].push([(b - (bays - 1) / 2) * W, S.front + (r + 1) * S.rise + 0.353 + stripH / 2, r * S.tread + 0.5, r]);
+    const shadeCol = new THREE.Color();   // (baked shade: the rows further back sit deeper under the roof, so they are darker)
     const strip = new THREE.PlaneGeometry(stripW, stripH); strip.rotateY(Math.PI);
     byMix.forEach((list, k) => {
         if (!list.length) return;
         const mesh = new THREE.InstancedMesh(strip, crowdMat(k), list.length);
-        list.forEach(([x, y, z], i) => mesh.setMatrixAt(i, m.makeTranslation(x, y, z)));
+        list.forEach(([x, y, z, r], i) => { mesh.setMatrixAt(i, m.makeTranslation(x, y, z)); mesh.setColorAt(i, shadeCol.setScalar(1 - 0.48 * Math.pow(r / (R - 1), 1.3))); });
         st.add(mesh);
     });
     // end walls
@@ -577,7 +503,7 @@ export function footbridge(group, span, text = 'FORMULA FOR VICTORY') {
 // =====================================================================
 export function decorate(ctx) {
     const made = ctx.circuit && ctx.circuit.scenery ? ctx.circuit.scenery(ctx) : null;
-    return made && made.update ? made : { update() {} };
+    return made && made.update ? made : { update() {} };   // (a circuit may also give setLook(look, direct): see Monaco's sea)
 }
 // Tyre marks: two dark lines along the racing line through each corner
 export function tyreMarks(ctx) {
