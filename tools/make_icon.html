@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<!-- Formula for Victory: draws the app icon in code (a single-seater's silhouette and a chequered flag; no brand marks).
+     Open this page and call icon(192) or icon(512): it returns the PNG as base64. The saved copies are icon-192.png and icon-512.png. -->
+<meta charset="utf-8"><body style="background:#333"><canvas id="c"></canvas>
+<script>
+function carShape(x, w) {
+    const u = w / 100;
+    x.beginPath();
+    x.moveTo(100 * u, -3 * u); x.lineTo(96 * u, -6 * u); x.lineTo(72 * u, -9 * u); x.lineTo(60 * u, -12 * u); x.lineTo(54 * u, -17 * u); x.lineTo(48 * u, -17 * u);
+    x.lineTo(44 * u, -24 * u); x.lineTo(34 * u, -24 * u); x.lineTo(26 * u, -15 * u); x.lineTo(10 * u, -13 * u); x.lineTo(10 * u, -26 * u); x.lineTo(0, -26 * u); x.lineTo(0, -19 * u);
+    x.lineTo(6 * u, -19 * u); x.lineTo(6 * u, -5 * u); x.lineTo(100 * u, -1 * u); x.closePath(); x.fill();
+    x.fillRect(88 * u, -5.5 * u, 13 * u, 2.2 * u);
+    x.save(); x.lineWidth = 1.8 * u; x.strokeStyle = x.fillStyle; x.beginPath(); x.moveTo(40 * u, -24 * u); x.quadraticCurveTo(50 * u, -27 * u, 56 * u, -17 * u); x.stroke(); x.restore();
+}
+function icon(S) {
+    const c = document.getElementById('c'); c.width = c.height = S; const x = c.getContext('2d'), u = S / 512;
+    // background: dark, with a red glow low down (full square, so launchers can round the corners themselves)
+    x.fillStyle = '#111317'; x.fillRect(0, 0, S, S);
+    const g = x.createRadialGradient(S * 0.5, S * 0.78, S * 0.05, S * 0.5, S * 0.78, S * 0.75); g.addColorStop(0, '#E10600'); g.addColorStop(0.55, '#5a0a08'); g.addColorStop(1, '#111317');
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    // the chequered flag, waving, top left
+    x.save(); x.translate(150 * u, 60 * u); x.rotate(-0.1);
+    const cols = 7, rows = 5, q = 36 * u;
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+        const wave = Math.sin(i * 0.8) * 9 * u;
+        x.fillStyle = (i + j) % 2 ? '#F4F6F8' : '#15171b'; x.fillRect(i * q, j * q + wave, q + 0.6, q + 0.6);
+    }
+    x.strokeStyle = '#F4F6F8'; x.lineWidth = 3 * u; x.beginPath();
+    for (let i = 0; i <= cols; i++) { const w0 = Math.sin(Math.min(i, cols - 1) * 0.8) * 9 * u; i ? x.lineTo(i * q, w0) : x.moveTo(0, w0); } x.stroke();
+    x.fillStyle = '#C9CED6'; x.fillRect(-9 * u, -10 * u, 9 * u, 250 * u);
+    x.restore();
+    // speed stripes
+    x.save(); x.translate(0, 395 * u); x.transform(1, 0, -0.45, 1, 0, 0);
+    ['#FFB300', '#F4F6F8'].forEach((col, i) => { x.fillStyle = col; x.globalAlpha = 0.85; x.fillRect(40 * u, i * 20 * u - 62 * u, 250 * u - i * 70 * u, 9 * u); });
+    x.restore(); x.globalAlpha = 1;
+    // the car: white body, dark wheels with a red ring
+    const w = 420 * u, left = 46 * u, base = 420 * u;
+    x.save(); x.translate(left, base); x.fillStyle = 'rgba(0,0,0,.45)'; x.beginPath(); x.ellipse(w / 2, 4 * u, w * 0.52, 12 * u, 0, 0, 7); x.fill();
+    x.fillStyle = '#F4F6F8'; carShape(x, w);
+    for (const cx of [20, 78]) {
+        const px = cx * w / 100, py = -7.5 * w / 100, r = 8.6 * w / 100;
+        x.fillStyle = '#15171b'; x.beginPath(); x.arc(px, py, r, 0, 7); x.fill();
+        x.strokeStyle = '#FFB300'; x.lineWidth = 3.5 * u; x.beginPath(); x.arc(px, py, r * 0.62, 0, 7); x.stroke();
+        x.fillStyle = '#C9CED6'; x.beginPath(); x.arc(px, py, r * 0.22, 0, 7); x.fill();
+    }
+    x.fillStyle = '#E10600'; x.fillRect(0, -26 * w / 100, 10 * w / 100, 4 * w / 100);   // the rear wing's top edge
+    x.restore();
+    return c.toDataURL('image/png').split(',')[1];
+}
+icon(512);
+</script>

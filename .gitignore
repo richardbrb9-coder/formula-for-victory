@@ -1,0 +1,6 @@
+# Mac and editor files
+.DS_Store
+.claude/
+
+# The test harness (a local copy of the app plus headless Chrome)
+tools/test/

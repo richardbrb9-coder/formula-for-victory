@@ -1,0 +1,12 @@
+// Formula for Victory: the list of circuits. Each one is its own data file, loaded only when it is chosen.
+// To add a circuit: trace it with tools/build_circuit.py, write its data file (see monza.js), and switch it on here.
+export const CIRCUITS = [
+    { id: 'monza', name: 'Monza', country: 'Italy', flag: '🇮🇹', km: 5.793, blurb: 'The Temple of Speed: long straights through a royal park, three chicanes and the sweeping Parabolica.',
+      load: () => import('./monza.js').then(m => m.MONZA) },
+    { id: 'silverstone', name: 'Silverstone', country: 'Great Britain', flag: '🇬🇧', km: 5.891, blurb: 'Fast, flowing bends on an old airfield.', soon: true },
+    { id: 'monaco', name: 'Monaco', country: 'Monaco', flag: '🇲🇨', km: 3.337, blurb: 'Tight streets between the walls, a tunnel and the harbour.', soon: true },
+    { id: 'suzuka', name: 'Suzuka', country: 'Japan', flag: '🇯🇵', km: 5.807, blurb: 'A figure of eight: the track crosses over itself on a bridge.', soon: true },
+    { id: 'lasvegas', name: 'Las Vegas', country: 'USA', flag: '🇺🇸', km: 6.201, blurb: 'A night race down a famous street of lights.', soon: true }
+];
+// a small picture of a circuit's shape for the menus (only for circuits that are ready)
+export const OUTLINES = {};

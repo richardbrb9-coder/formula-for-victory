@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Formula for Victory</title>
+    <meta name="description" content="A Grand Prix racing game for ages 9 to 12: single-seater racing cars on real circuits.">
+
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#111317">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="icon" href="icon-192.png" type="image/png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="stylesheet" href="style.css">
+    <!-- Child-friendly settings: stop browser features that get in the way when a child is playing
+         (long-press "save image" menus, dragging pictures, zooming, pull-to-refresh, print/save shortcuts,
+         translate prompts, and the Back button closing the app). The search box still works normally. -->
+    <meta name="google" content="notranslate">
+    <style>
+        html { touch-action: pan-x pan-y; }   /* scrolling only: no pinch or double-tap zoom (games that need touch set their own) */
+        html, body { overscroll-behavior: none; -webkit-text-size-adjust: 100%; }   /* no pull-to-refresh or bounce */
+        body { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+        img, svg, canvas, video, a { -webkit-touch-callout: none; -webkit-user-drag: none; }
+        input, textarea, [contenteditable="true"] { -webkit-touch-callout: default; -webkit-user-select: text; user-select: text; }
+        @media print {
+            body > * { display: none !important; }
+            body::after { content: 'Printing is switched off in this app.'; display: block; padding: 40px; text-align: center; font: 700 24px sans-serif; }
+        }
+    </style>
+    <script>
+        (function () {
+            const isTyping = el => el && el.closest && el.closest('input, textarea, [contenteditable="true"]');
+            const block = e => { if (!isTyping(e.target)) e.preventDefault(); };
+            document.addEventListener('contextmenu', block, true);   // long-press menu: save / download / share image, open link
+            document.addEventListener('dragstart', block, true);     // dragging pictures and links out of the app
+            document.addEventListener('selectstart', block, true);   // selecting text (and the copy / web-search bubble)
+            // iPads ignore "user-scalable=no", so stop pinch-zoom there too
+            ['gesturestart', 'gesturechange', 'gestureend'].forEach(t => document.addEventListener(t, e => e.preventDefault(), { passive: false }));
+            // Keyboard shortcuts: print, save, find, open, view source and zoom
+            document.addEventListener('keydown', e => {
+                if ((e.ctrlKey || e.metaKey) && ['p', 's', 'f', 'g', 'o', 'u', '+', '=', '-', '0'].includes((e.key || '').toLowerCase())) e.preventDefault();
+            }, true);
+            document.addEventListener('wheel', e => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });   // trackpad pinch-zoom
+
+            // Back button / back swipe: close a pop-up or return to the first screen, instead of leaving the app
+            const arm = () => { if (!(history.state && history.state.kidGuard)) history.pushState({ kidGuard: true }, ''); };
+            document.addEventListener('pointerdown', arm, true);   // browsers only honour this after a tap, so add it on the first touch
+            window.addEventListener('popstate', () => {
+                if (document.querySelector('.modal.open')) {
+                    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+                } else {
+                    const home = document.querySelector('.nav-btn');
+                    if (home && !home.classList.contains('active')) home.click();
+                }
+                arm();
+            });
+        })();
+    </script>
+</head>
+<body>
+    <header class="topbar">
+        <button class="brand nav-btn home active" data-screen="title" aria-label="Formula for Victory home">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <span class="brand-text">FORMULA<b>FOR VICTORY</b></span>
+        </button>
+        <span class="spacer"></span>
+        <button class="install-btn" id="install-btn" hidden>📲 Install app</button>
+        <button class="units-btn" id="units-btn" title="Switch between mph and km/h">MPH</button>
+    </header>
+
+    <main>
+        <!-- TITLE -->
+        <section id="screen-title" class="screen active">
+            <div class="title-wrap">
+                <canvas class="title-art" id="title-art" aria-hidden="true"></canvas>
+                <div class="title-box">
+                    <div class="title-flag" aria-hidden="true"></div>
+                    <h1 class="title-logo">FORMULA<small>FOR</small><b>VICTORY</b></h1>
+                    <p class="title-tag">Grand Prix racing on real circuits. Ten cars on the grid. Can you take the chequered flag?</p>
+                    <div class="title-btns">
+                        <button class="big-btn" data-screen="circuits">Start</button>
+                        <button class="link-btn" data-screen="credits">Credits</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CHOOSE A CIRCUIT -->
+        <section id="screen-circuits" class="screen">
+            <div class="screen-head">
+                <h1><span class="kicker">Step 1</span>Choose a circuit</h1>
+                <p class="subtitle">Every circuit is traced from a real map, so the corners are where they really are.</p>
+            </div>
+            <div class="circuit-grid" id="circuit-grid"></div>
+        </section>
+
+        <!-- SET UP THE RACE -->
+        <section id="screen-setup" class="screen">
+            <button class="back-btn" data-screen="circuits">‹ Circuits</button>
+            <div id="setup"></div>
+        </section>
+
+        <!-- CREDITS -->
+        <section id="screen-credits" class="screen">
+            <button class="back-btn" data-screen="title">‹ Back</button>
+            <div class="screen-head"><h1><span class="kicker">Credits</span>Thank you</h1></div>
+            <div class="panel credits" id="credits"></div>
+        </section>
+    </main>
+
+    <!-- THE RACE (fills the screen) -->
+    <div class="race-stage" id="race-stage" hidden>
+        <div class="race-canvas-wrap" id="race-canvas-wrap">
+            <div class="race-hud" id="race-hud"></div>
+            <canvas class="race-map" id="race-map" width="180" height="180"></canvas>
+            <div class="race-flash" id="race-flash"></div>
+            <div class="race-corner" id="race-corner"></div>
+            <div class="race-slip" id="race-slip">SLIPSTREAM</div>
+            <div class="race-top">
+                <button class="opt" data-race="pause">❚❚ Pause</button><button class="opt" id="race-cam">🎥 Camera</button>
+                <button class="opt" id="race-help">🛞 Driving help</button><button class="opt" id="race-tilt">📱 Tilt</button><button class="opt" id="race-sound">🔊 Sound</button><button class="opt" id="race-engine">🏎️ Engine</button><button class="opt" id="race-units">MPH</button>
+            </div>
+            <div class="pad pad-left"><button class="pad-btn" data-pad="left" aria-label="Steer left">◀</button><button class="pad-btn" data-pad="right" aria-label="Steer right">▶</button></div>
+            <div class="pad pad-right"><button class="pad-btn brake" data-pad="brake" aria-label="Brake">BRAKE</button><button class="pad-btn gas" data-pad="gas" aria-label="Accelerate">GO</button></div>
+            <div class="race-panel" id="race-pause-panel" hidden><div class="rr-box"><h2>Paused</h2><div class="rr-actions"><button class="big-btn" data-race="resume">Keep racing</button><button class="act-btn ghost" data-race="menu">Quit to menu</button></div></div></div>
+            <div class="race-panel" id="race-result" hidden></div>
+        </div>
+    </div>
+
+    <div class="loading-veil" id="loading" hidden><div>WARMING UP THE TYRES…<small>Building the circuit</small></div></div>
+    <div id="toast" role="status"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
