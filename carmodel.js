@@ -793,8 +793,8 @@ function liveryTexture(d, hd = false) {
     const x = c.getContext('2d'); x.setTransform(S, 0, 0, S, 0, 0); x.globalAlpha = 1; x.lineCap = 'butt';
     const Y = v => (1 - v) * H;                                   // the texture is flipped vertically
     x.fillStyle = d.paint; x.fillRect(0, 0, W, H);
-    const f1 = isFormula(d);                                     // (the Formula racer's picture is laid out its own way: see formula.js)
-    if (d.twoTone && f1) formulaTwoTone(x, d, W, H, Y);
+    const single = isFormula(d);                                     // (the Formula racer's picture is laid out its own way: see formula.js)
+    if (d.twoTone && single) formulaTwoTone(x, d, W, H, Y);
     else if (d.twoTone) { x.fillStyle = d.paint2; x.fillRect(0, Y(0.24), W, Y(0) - Y(0.24)); x.fillRect(0, Y(1), W, Y(0.76) - Y(1)); }   // lower half of each side
     const sc = d.stripeColour;
     const band = (v0, v1, u0 = 0, u1 = 1) => { x.fillRect(u0 * W, Y(v1), (u1 - u0) * W, Y(v0) - Y(v1)); };
@@ -820,9 +820,9 @@ function liveryTexture(d, hd = false) {
     const box = isOffroad(d);                                    // (the Off-roader's sides are laid out by height: see offroad.js)
     const pxU = W / d.L, pxV = box ? H * V_SIDE : H / (2 * d.W + 2 * (d.deck - d.ride) + 0.4);   // pixels per metre along and around the body
     const team = TEAM_LIVERIES[d.livery];
-    if (team) f1 ? formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS }) : teamLivery(x, d, W, H, Y, band, pxU, pxV, box ? H * V_TOP / pxU : 0);
+    if (team) single ? formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS }) : teamLivery(x, d, W, H, Y, band, pxU, pxV, box ? H * V_TOP / pxU : 0);
     const num = String(d.number || '').trim().slice(0, 2) || (team ? { rally: '4', endurance: '24', gt: '7' }[d.livery] : ''), tag = String(d.tag || '').trim().slice(0, 14);
-    if (f1) { formulaMarks(x, d, W, H, Y, num, tag); formulaPanelLines(x, d, W, H, Y); }
+    if (single) { formulaMarks(x, d, W, H, Y, num, tag); formulaPanelLines(x, d, W, H, Y); }
     else for (const side of ['right', 'left']) {
         // (on the Off-roader the number is a little smaller and sits on the back door, clear of the rubbing strip and the handles)
         const v = side === 'right' ? (box ? 0.312 : 0.29) : (box ? 0.688 : 0.71), flipX = side === 'right' ? -1 : 1, flipY = side === 'right' ? 1 : -1;

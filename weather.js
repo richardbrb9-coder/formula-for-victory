@@ -77,7 +77,7 @@ export class Weather {
         let last = 0; for (let i = 0; i < len; i++) { last = last * 0.6 + (Math.random() * 2 - 1) * 0.4; d[i] = last + (Math.random() < 0.0015 ? (Math.random() - 0.5) * 1.5 : 0); }
         const src = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
         src.buffer = buf; src.loop = true; f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 0.5; g.gain.value = 0.09;
-        src.connect(f); f.connect(g); g.connect(ctx.destination); src.start();
+        src.connect(f); f.connect(g); g.connect(window.audioOut ? window.audioOut() || ctx.destination : ctx.destination); src.start();
         this.sound = { src, g };
     }
     stopSound() { if (this.sound) { try { this.sound.src.stop(); } catch (e) { /* already stopped */ } this.sound = null; } }

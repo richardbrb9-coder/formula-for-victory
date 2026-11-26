@@ -66,12 +66,13 @@
             <span class="brand-text">FORMULA<b>FOR VICTORY</b></span>
         </button>
         <span class="spacer"></span>
-        <button class="install-btn" id="install-btn" hidden>📲 Install app</button>
+        <button class="install-btn" id="install-btn" hidden>📲 Install<span class="wide"> app</span></button>
+        <button class="units-btn sound-btn" id="sound-btn" aria-label="Sound on or off" title="Sound on or off">🔊</button>
         <button class="units-btn" id="units-btn" title="Switch between mph and km/h">MPH</button>
     </header>
 
     <main>
-        <!-- TITLE -->
+        <!-- TITLE AND MAIN MENU -->
         <section id="screen-title" class="screen active">
             <div class="title-wrap">
                 <canvas class="title-art" id="title-art" aria-hidden="true"></canvas>
@@ -79,18 +80,25 @@
                     <div class="title-flag" aria-hidden="true"></div>
                     <h1 class="title-logo">FORMULA<small>FOR</small><b>VICTORY</b></h1>
                     <p class="title-tag">Grand Prix racing on real circuits. Ten cars on the grid. Can you take the chequered flag?</p>
-                    <div class="title-btns">
-                        <button class="big-btn" data-screen="circuits">Start</button>
-                        <button class="link-btn" data-screen="credits">Credits</button>
-                    </div>
+                </div>
+                <nav class="menu-cards" aria-label="Main menu">
+                    <button class="menu-card champ" data-menu="champ"><span class="mc-icon" aria-hidden="true">🏆</span><span class="mc-text"><b>Championship</b><small id="mc-champ">Five races. One champion.</small></span></button>
+                    <button class="menu-card" data-menu="race"><span class="mc-icon" aria-hidden="true">🏁</span><span class="mc-text"><b>Quick race</b><small>One race on any circuit.</small></span></button>
+                    <button class="menu-card" data-menu="trial"><span class="mc-icon" aria-hidden="true">⏱️</span><span class="mc-text"><b>Time trial</b><small>Just you against the clock.</small></span></button>
+                </nav>
+                <div class="menu-small">
+                    <button class="chip-btn" data-screen="help">❓ How to play</button>
+                    <button class="chip-btn" data-screen="settings">⚙️ Settings</button>
+                    <button class="chip-btn" data-screen="credits">📜 Credits</button>
                 </div>
             </div>
         </section>
 
         <!-- CHOOSE A CIRCUIT -->
         <section id="screen-circuits" class="screen">
+            <button class="back-btn" data-screen="title">‹ Menu</button>
             <div class="screen-head">
-                <h1><span class="kicker">Step 1</span>Choose a circuit</h1>
+                <h1><span class="kicker" id="circuits-kicker">Quick race</span>Choose a circuit</h1>
                 <p class="subtitle">Every circuit is traced from a real map, so the corners are where they really are.</p>
             </div>
             <div class="circuit-grid" id="circuit-grid"></div>
@@ -102,9 +110,29 @@
             <div id="setup"></div>
         </section>
 
+        <!-- CHAMPIONSHIP: a new season, the season so far, after each race, and the champion -->
+        <section id="screen-champ" class="screen">
+            <button class="back-btn" data-screen="title">‹ Menu</button>
+            <div id="champ"></div>
+        </section>
+
+        <!-- HOW TO PLAY -->
+        <section id="screen-help" class="screen">
+            <button class="back-btn" data-screen="title">‹ Menu</button>
+            <div class="screen-head"><h1><span class="kicker">How to play</span>Ready to race?</h1></div>
+            <div id="help"></div>
+        </section>
+
+        <!-- SETTINGS -->
+        <section id="screen-settings" class="screen">
+            <button class="back-btn" data-screen="title">‹ Menu</button>
+            <div class="screen-head"><h1><span class="kicker">Settings</span>Set it up your way</h1></div>
+            <div class="panel settings" id="settings"></div>
+        </section>
+
         <!-- CREDITS -->
         <section id="screen-credits" class="screen">
-            <button class="back-btn" data-screen="title">‹ Back</button>
+            <button class="back-btn" data-screen="title">‹ Menu</button>
             <div class="screen-head"><h1><span class="kicker">Credits</span>Thank you</h1></div>
             <div class="panel credits" id="credits"></div>
         </section>
@@ -123,7 +151,7 @@
             </div>
             <div class="pad pad-left"><button class="pad-btn" data-pad="left" aria-label="Steer left">◀</button><button class="pad-btn" data-pad="right" aria-label="Steer right">▶</button></div>
             <div class="pad pad-right"><button class="pad-btn brake" data-pad="brake" aria-label="Brake">BRAKE</button><button class="pad-btn gas" data-pad="gas" aria-label="Accelerate">GO</button></div>
-            <div class="race-panel" id="race-pause-panel" hidden><div class="rr-box"><h2>Paused</h2><div class="rr-actions"><button class="big-btn" data-race="resume">Keep racing</button><button class="act-btn ghost" data-race="menu">Quit to menu</button></div></div></div>
+            <div class="race-panel" id="race-pause-panel" hidden><div class="rr-box"><h2>Paused</h2><p class="small" id="race-pause-note" hidden>Your season is saved. If you quit now, this race starts again from the grid next time.</p><div class="rr-actions"><button class="big-btn" data-race="resume">Keep racing</button><button class="act-btn ghost" data-race="menu">Quit to menu</button></div></div></div>
             <div class="race-panel" id="race-result" hidden></div>
         </div>
     </div>
@@ -131,6 +159,12 @@
     <div class="loading-veil" id="loading" hidden><div>WARMING UP THE TYRES…<small>Building the circuit</small></div></div>
     <div id="toast" role="status"></div>
 
+    <canvas class="party" id="party" aria-hidden="true" hidden></canvas>
+
+    <script src="teams.js"></script>
+    <script src="sound.js"></script>
+    <script src="season.js"></script>
     <script src="app.js"></script>
+    <script src="championship.js"></script>
 </body>
 </html>

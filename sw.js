@@ -1,4 +1,4 @@
-const CACHE_NAME = 'formula-for-victory-v12'; // Bump this on every change so tablets pick up the new version
+const CACHE_NAME = 'formula-for-victory-v13'; // Bump this on every change so tablets pick up the new version
 const CACHE_PREFIX = 'formula-for-victory-'; // Only this app's own caches are ever deleted: every app on richardbrb9-coder.github.io shares the same cache storage
 
 // Everything is stored inside the app (no CDNs), and all addresses are relative so it works in a GitHub Pages subfolder.
@@ -7,6 +7,10 @@ const CORE_FILES = [
     './index.html',
     './style.css',
     './app.js',
+    './teams.js',
+    './sound.js',
+    './season.js',
+    './championship.js',
     './manifest.json',
     './race.js',
     './track.js',
@@ -114,9 +118,9 @@ self.addEventListener('activate', (event) => {
     );
 });
 
-// The page, the manifest and the circuit data are checked online first (when there is a connection), so changes reach
+// The page, the manifest, the teams' names and the circuit data are checked online first (when there is a connection), so changes reach
 // the tablet straight away. Everything else (code, pictures, sounds, fonts) comes from the saved copy first, for speed.
-const NETWORK_FIRST = ['index.html', 'manifest.json', 'circuits/index.js', 'circuits/monza.js', 'circuits/monza.geo.js',
+const NETWORK_FIRST = ['index.html', 'manifest.json', 'teams.js', 'circuits/index.js', 'circuits/monza.js', 'circuits/monza.geo.js',
     'circuits/silverstone.js', 'circuits/silverstone.geo.js', 'circuits/monaco.js', 'circuits/monaco.geo.js',
     'circuits/suzuka.js', 'circuits/suzuka.geo.js', 'circuits/lasvegas.js', 'circuits/lasvegas.geo.js'];
 const NETWORK_TIMEOUT_MS = 4000;

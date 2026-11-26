@@ -158,17 +158,12 @@ function showDetail(r, full) {
     r.fullOn = full; r.far.visible = !full;
     r.model.group.visible = full;
 }
-// Ten made-up teams: [name, paint, stripes, second colour, race number]. No real team's colours or names.
-export const TEAMS = [
-    ['Team Apex', '#F4F6F8', '#FF6D00', '#00B8D9', 4], ['Nitro Racing', '#1E3A8A', '#FFB300', '#F4F6F8', 24], ['Velocity GP', '#00A86B', '#F4F6F8', '#1B1F26', 7],
-    ['Bolt Motorsport', '#FFB300', '#1B1F26', '#E10600', 11], ['Rocket Racing', '#1B1F26', '#C6FF00', '#9AA3AF', 33], ['Comet Speed', '#7E57C2', '#F4F6F8', '#00B8D9', 18],
-    ['Peak Performance', '#D81B60', '#F4F6F8', '#1B1F26', 5], ['Thunder GP', '#00B8D9', '#1B1F26', '#FFB300', 46], ['Falcon Racing', '#FF6D00', '#1B1F26', '#C6FF00', 62],
-    ['Storm Motorsport', '#C6FF00', '#1B1F26', '#7E57C2', 88]
-];
+// The ten made-up teams and their drivers live in teams.js (the one place their names, colours and numbers are kept).
+export const TEAMS = window.FFV.TEAMS, YOU = window.FFV.YOU;
 function teamDesign(i) {
-    const [name, paint, stripe, paint2, num] = TEAMS[i % TEAMS.length];
+    const k = i % TEAMS.length, t = TEAMS[k];
     const d = applyPreset({ ...DEFAULT }, 'formula');
-    return { ...d, name, paint, stripeColour: stripe, paint2, caliper: stripe, livery: ['rally', 'endurance', 'gt'][i % 3], number: String(num), finish: ['gloss', 'metallic', 'gloss'][i % 3], tag: '' };
+    return { ...d, name: t.team, driver: t.driver, teamIdx: k, paint: t.paint, stripeColour: t.stripe, paint2: t.paint2, caliper: t.stripe, livery: ['rally', 'endurance', 'gt'][i % 3], number: String(t.number), finish: ['gloss', 'metallic', 'gloss'][i % 3], tag: '' };
 }
 const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th');
 
@@ -186,6 +181,7 @@ function autoQuality() { const q = store('autoLevel', null); return SC.QUALITY[q
 let world = null, player = null, rivals = [], ghost = null, mode = 'race', difficulty = 'medium';
 const fieldSize = 9;                               // nine rivals: a grid of ten
 let lapsChosen = 3, playerTeam = 5, onExit = null; // set by the menus (see start)
+let champ = null;                                 // a championship race: { round, of, field, points, onFinish } (see start)
 let race = null;                                  // { phase: 'grid'|'lights'|'go'|'done', t, lightsT, results }
 const input = { left: false, right: false, gas: false, brake: false, tilt: 0 };
 // camera views: 0 chase, 1 close chase, 2 bonnet, 3 cockpit (from the driver's seat)
@@ -316,7 +312,9 @@ function setupRace() {
     };
     if (mode === 'race') {
         // the rivals spread from quickest (at the front) to slowest, and you start at the back
-        const others = TEAMS.map((_, i) => i).filter(i => i !== playerTeam).sort(() => Math.random() - 0.5);
+        // (a single race: the rivals in any order. A championship race: in the order the season gives them, see season.js)
+        const anyOrder = TEAMS.map((_, i) => i).filter(i => i !== playerTeam).sort(() => Math.random() - 0.5), given = champ && champ.field;
+        const others = Array.isArray(given) && given.length === fieldSize && new Set(given).size === fieldSize && given.every(i => Number.isInteger(i) && TEAMS[i] && i !== playerTeam) ? given : anyOrder;
         const mine = Number.isInteger(window.__gridSlot) ? Math.max(0, Math.min(fieldSize, window.__gridSlot)) : fieldSize, free = slots.filter((_, k) => k !== mine);   // (testing only: start from another grid box)
         for (let i = 0; i < fieldSize; i++) {
             const r = makeRacer(teamDesign(others[i]), DIFF[difficulty] * (1 - i * 0.06 / fieldSize), false);
@@ -364,8 +362,10 @@ function lapCrossing(r, prevIdx) {
             r.lap++; r.half = false;
             const now = race.raceTime, lapTime = r.lap >= 1 ? now - r.lapStart : null;
             if (lapTime == null) r.lineStart = now; else r.laps.push(lapTime);     // every car's lap times are kept, for the podium
-            if (lapTime != null && (r.best == null || lapTime < r.best)) r.best = lapTime;
-            if (r.isPlayer) onPlayerLap(lapTime);
+            // (in a race the first lap is timed from the green light, the same as the clock on screen and the podium's sheet)
+            const timed = lapTime != null && mode === 'race' && r.lap === 1 ? now : lapTime;
+            if (timed != null && (r.best == null || timed < r.best)) r.best = timed;
+            if (r.isPlayer) onPlayerLap(timed);
             r.lapStart = now;
             if (mode === 'race' && r.lap >= raceLaps() && r.finished == null) { r.finished = now; if (r.isPlayer) finishRace(); }
         }
@@ -673,7 +673,7 @@ function classify() {
         for (const r of rivals) driveRival(r, 0.01);
         collisions(); race.raceTime += 0.01;
     }
-    const rows = [player, ...rivals].map((c, k) => ({ k, c, name: k === 0 ? 'You' : c.design.name, colour: c.design.paint, total: c.finished,
+    const rows = [player, ...rivals].map((c, k) => ({ k, c, name: k === 0 ? YOU : c.design.driver, team: c.design.name, teamIdx: c.design.teamIdx, colour: c.design.paint, total: c.finished,
         // lap 1 is timed from the green light (like a real race), so the laps add up to the race time
         laps: c.finished == null ? [] : c.laps.slice(0, raceLaps()).map((t, i) => i === 0 ? t + c.lineStart : t), best: c.best, far: progressOf(c) }));
     rows.sort((a, b) => (a.total ?? Infinity) - (b.total ?? Infinity) || before[b.k] - before[a.k] || b.far - a.far);
@@ -691,14 +691,20 @@ function finishRace() {
     const medal = ['🥇 Gold', '🥈 Silver', '🥉 Bronze'][pos - 1] || '';
     const medals = store('medals', {}), key = TRACK.id + '_' + difficulty, prev = medals[key];
     if (pos <= 3 && (!prev || pos < prev)) { medals[key] = pos; storeSet('medals', medals); }
-    window.playSound && window.playSound(pos === 1 ? 'win' : 'lose');
+    if (window.playSound) { window.playSound(pos === 1 ? 'win' : pos > 3 ? 'lose' : 'go'); window.playSound(pos <= 3 ? 'bigcheer' : 'cheer'); }   // the crowd cheers every finisher, loudest for the top three
+    // a championship race: the season is told the finishing order straight away, so nothing is lost if the app is closed now
+    const C = champ;
+    if (C && C.onFinish && !race.reported) { race.reported = true; try { C.onFinish(race.results.map(row => ({ team: row.teamIdx, total: row.total, best: row.best }))); } catch (e) { console.error(e); } }
     const el = document.getElementById('race-result'); el.className = 'race-panel';
-    const kicker = `${TRACK.name} · ${raceLaps()} lap${raceLaps() === 1 ? "" : "s"} · ${difficulty}`, title = pos === 1 ? 'You win!' : `You finished ${ordinal(pos)}`;
-    const actions = '<button class="big-btn" data-race="again">Race again</button><button class="act-btn" data-race="replay">🎬 Watch replay</button><button class="act-btn ghost" data-race="menu">Menu</button>';
-    race.sheet = { kicker, title, extra: medal ? `<p class="rr-medal">${medal}</p>` : '', actions, more: '📋 Results' };
-    const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td><span class="champ-dot" style="background:${row.colour}"></span>${escapeHtml(row.name)}</td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td></tr>`).join('');
+    const laps = `${raceLaps()} lap${raceLaps() === 1 ? "" : "s"}`, gained = C && C.points ? C.points[pos - 1] || 0 : 0;
+    const kicker = C ? `Round ${C.round} of ${C.of} · ${TRACK.name} · ${laps}` : `${TRACK.name} · ${laps} · ${difficulty}`, title = pos === 1 ? 'You win!' : `You finished ${ordinal(pos)}`;
+    const actions = C ? '<button class="big-btn" data-race="next">🏆 Standings</button><button class="act-btn" data-race="replay">🎬 Watch replay</button>'
+        : '<button class="big-btn" data-race="again">Race again</button><button class="act-btn" data-race="replay">🎬 Watch replay</button><button class="act-btn ghost" data-race="menu">Menu</button>';
+    const extra = (medal ? `<p class="rr-medal">${medal}</p>` : '') + (C ? `<p class="rr-points">${gained ? `+${gained} point${gained === 1 ? '' : 's'}` : 'No points this time'}</p>` : '');
+    race.sheet = { kicker, title, extra, actions, more: '📋 Results' };
+    const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td><span class="champ-dot" style="background:${row.colour}"></span>${escapeHtml(row.name)} <small>${escapeHtml(row.team)}</small></td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td>${C && C.points ? `<td class="pts">${C.points[i] ? '+' + C.points[i] : ''}</td>` : ''}</tr>`).join('');
     el.innerHTML = `<div class="rr-box champ-box"><span class="kicker">${kicker}</span><h2>${title}</h2>${race.sheet.extra}
-        <table class="champ-table"><thead><tr><th></th><th>Driver</th><th>Race time</th><th>Best lap</th></tr></thead><tbody>${rows}</tbody></table>
+        <table class="champ-table"><thead><tr><th></th><th>Driver</th><th>Race time</th><th>Best lap</th>${C && C.points ? '<th>Points</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
         <div class="rr-actions">${actions}${PODIUM_BTN}</div></div>`;
     el.hidden = false;
 }
@@ -756,6 +762,7 @@ function startPodium() {
     race.podium = { t: 0, top, saveCam: camMode, party: you < 3 && !matchMedia('(prefers-reduced-motion: reduce)').matches };
     camMode = 0; applyCameraView();
     stopEngine(); if (efx) efx.clear(); dmg.clearPieces();
+    if (window.playSound) window.playSound(you < 3 ? 'bigcheer' : 'cheer');   // the crowd, as the cars go up on the steps
     podiumScene();
     // the sheet under the cars: who came where, each lap and the race time. Second, first, third, the same way round as the steps.
     const card = i => { const row = top[i]; if (!row) return '<div></div>';
@@ -845,6 +852,7 @@ function startReplay() {
     if (!race || !race.tape || race.tape.length < 20) return;
     if (!tvCams) buildTvCams();
     race.replay = { t: 0, shot: -1, shotT: 0, cam: null, saveCam: camMode, hit: 0 };
+    if (window.stopLongSounds) window.stopLongSounds();
     camMode = 0; applyCameraView();
     if (race.podiumAt != null) race.podiumAt = 0;                    // (the podium then follows straight after the replay)
     podiumLamps(false);
@@ -1037,8 +1045,11 @@ function hud() {
     const left = mode === 'race'
         ? `<div class="hud-pos"><b>P${positionOf(player)}</b><span>/${rivals.length + 1}</span></div><div class="hud-lap">LAP ${lapShown}/${laps}</div>`
         : `<div class="hud-pos"><b>TIME</b></div><div class="hud-lap">TRIAL · LAP ${Math.max(1, player.lap + 1)}</div>`;
-    const lapNow = race.phase === 'go' && player.lap >= 0 ? race.raceTime - player.lapStart : 0;
-    // this lap's clock, your best ever lap here, and the laps you have finished
+    // This lap's clock. It starts running at the green light (not when you first reach the line): in a race the first
+    // lap is timed from there; in a time trial the clock starts again as you cross the line to begin your first timed lap.
+    const fromGreen = player.lap < 0 || (mode === 'race' && player.lap === 0);
+    const lapNow = race.phase === 'go' ? (fromGreen ? race.raceTime : race.raceTime - player.lapStart) : race.phase === 'done' && race.lapTimes.length ? race.lapTimes[race.lapTimes.length - 1] : 0;
+    // your best ever lap here, and the laps you have finished
     const done = race.lapTimes.slice(-3).map((t, i, a) => `<div class="hud-done">Lap ${race.lapTimes.length - a.length + i + 1} <b>${fmtTime(t)}</b></div>`).join('');
     const right = `<div class="hud-time">${fmtTenths(lapNow)}</div><div class="hud-best">Best ${fmtTime(store('raceBest_' + TRACK.id, null))}</div>${done}`;
     const html = `<div class="hud-left">${left}</div><div class="hud-right">${right}</div><div class="hud-speed"><b>${Math.round(spd)}</b><span>${units === 'mph' ? 'MPH' : 'KM/H'}</span></div>`;
@@ -1066,13 +1077,7 @@ function countdown(text, step) {
     el.textContent = text; el.classList.toggle('go', step === 4);
     el.style.setProperty('--start', [2.6, 2.2, 1.8, 1.9][step - 1]);
     el.classList.remove('run'); void el.offsetWidth; el.classList.add('run');      // restart the animation
-    beep(step === 4 ? 880 : 440, step === 4 ? 0.45 : 0.22);
-}
-function beep(freq, len) {
-    const ctx = window.getAudio && window.getAudio(); if (!ctx || !soundOn) return;
-    const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime;
-    o.type = 'square'; o.frequency.value = freq; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.12, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-    o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + len + 0.05);
+    if (soundOn && window.playSound) window.playSound(step === 4 ? 'high' : 'low');
 }
 function flash(text, ms = 1800) {
     const el = document.getElementById('race-flash'); el.textContent = text; el.classList.add('show');
@@ -1085,7 +1090,7 @@ function bump(vol) {
     const len = Math.floor(ctx.sampleRate * 0.25), buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
     const src = ctx.createBufferSource(), g = ctx.createGain(); src.buffer = buf; g.gain.value = vol * 0.5;
-    src.connect(g); g.connect(ctx.destination); src.start();
+    src.connect(g); g.connect(window.audioOut()); src.start();
 }
 // Engine sound: real engine recordings (Wikimedia Commons, see Credits) looped and sped up and down with the revs through
 // six imaginary gears. A low loop for the engine's own note fades into a high-revs loop near the top of each gear. Electric
@@ -1103,7 +1108,7 @@ function startEngine() {
     const ctx = window.getAudio && window.getAudio(); if (!ctx || engine || !soundOn) return;
     const ev = player.stats.engine.sound === 0, kind = player.design.engine;
     // everything goes through a gentle compressor, so the engine can be loud without crackling
-    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(ctx.destination);
+    const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 4; comp.connect(window.audioOut());   // (through the game's volume knob: see sound.js)
     // inside the cockpit the sound is muffled, as if heard through the car's body
     const muffle = ctx.createBiquadFilter(); muffle.type = 'lowpass'; muffle.frequency.value = 20000; muffle.connect(comp);
     const master = ctx.createGain(); master.gain.value = 1.6; master.connect(muffle);
@@ -1451,16 +1456,21 @@ function showStage() {
     document.getElementById('race-stage').hidden = false;
     document.getElementById('race-result').hidden = true;
     document.getElementById('race-pause-panel').hidden = true;
+    // (in a championship, leaving a race part-way doesn't lose the season: the pause box says so)
+    const note = document.getElementById('race-pause-note'), quit = document.querySelector('#race-pause-panel [data-race="menu"]');
+    if (note) note.hidden = !champ; if (quit) quit.textContent = champ ? 'Save and quit' : 'Quit to menu';
     document.body.classList.add('racing');
     resize(); setupRace(); startEngine();
 }
 // back to the menus (app.js shows them)
 function showMenu() {
+    const finished = !!(race && race.phase === 'done');   // (leaving after the finish, or giving up part-way)
+    if (window.stopLongSounds) window.stopLongSounds();
     stopEngine(); leavePodium(); endGridCam(true); race = null;
     document.getElementById('race-stage').hidden = true;
     document.body.classList.remove('racing');
     if (raf) { cancelAnimationFrame(raf); raf = null; }
-    if (onExit) onExit();
+    if (onExit) onExit(finished);
 }
 function resize() {
     if (!renderer) return;
@@ -1588,6 +1598,9 @@ function init() {
     return true;
 }
 // Start a race or a time trial. opts: { circuit (its data), mode: 'race' | 'trial', laps, difficulty, weather, team, onExit }
+// onExit(finished) is called on leaving: finished is true after the chequered flag, false if the race was given up.
+// A championship race also passes champ: { round, of, field (the nine rivals' team numbers, front of the grid first),
+// points (for 1st, 2nd, ...), onFinish(rows) }: onFinish gets [{ team, total, best }] in finishing order, at the flag.
 // Returns false if this device can't show 3D.
 export function start(opts) {
     if (!started) {
@@ -1596,7 +1609,7 @@ export function start(opts) {
         document.getElementById('race-stage').addEventListener('click', e => {
             const b = e.target.closest('button'); if (!b) return;
             if (b.dataset.race === 'again') { stopReplay(); showStage(); }
-            if (b.dataset.race === 'menu') { stopReplay(); showMenu(); }
+            if (b.dataset.race === 'menu' || b.dataset.race === 'next') { stopReplay(); showMenu(); }
             if (b.dataset.race === 'replay') startReplay();
             if (b.dataset.race === 'replay-exit') { stopReplay(); document.getElementById('race-result').hidden = false; }
             if (b.dataset.race === 'results') document.getElementById('race-result').classList.remove('podium');   // from the podium to the full results
@@ -1608,13 +1621,16 @@ export function start(opts) {
             if (b.id === 'race-units') { if (window.toggleUnits) window.toggleUnits(); b.textContent = (window.getUnits && window.getUnits() === 'kmh') ? 'KM/H' : 'MPH'; if (player && player.cockpit && player.cockpit.setUnits) player.cockpit.setUnits(window.getUnits()); }
             if (b.id === 'race-help') { help = !help; storeSet('raceHelp', help); b.classList.toggle('active', help); flash(help ? 'Driving help on' : 'Driving help off'); }
             if (b.id === 'race-engine') { engineOn = !engineOn; storeSet('raceEngine', engineOn); b.classList.toggle('active', engineOn); flash(engineOn ? 'Engine sound on' : 'Engine sound off'); }
-            if (b.id === 'race-sound') { soundOn = !soundOn; storeSet('raceSound', soundOn); b.classList.toggle('active', soundOn); soundOn ? startEngine() : stopEngine(); }
+            if (b.id === 'race-sound') { soundOn = !soundOn; if (window.FFVSound) window.FFVSound.setOn(soundOn); else storeSet('raceSound', soundOn); b.classList.toggle('active', soundOn); soundOn ? getAudioStart() : stopEngine(); }
         });
-        document.getElementById('race-sound').classList.toggle('active', soundOn);
-        document.getElementById('race-engine').classList.toggle('active', engineOn);
-        document.getElementById('race-help').classList.toggle('active', help);
     }
     if (!renderer) return false;
+    // (these can also be changed on the Settings screen between races)
+    soundOn = store('raceSound', true) !== false; engineOn = store('raceEngine', true) !== false; help = store('raceHelp', true) !== false;
+    document.getElementById('race-sound').classList.toggle('active', soundOn);
+    document.getElementById('race-engine').classList.toggle('active', engineOn);
+    document.getElementById('race-help').classList.toggle('active', help);
+    champ = opts.mode !== 'trial' && opts.champ ? opts.champ : null;
     mode = opts.mode === 'trial' ? 'trial' : 'race';
     lapsChosen = opts.laps || opts.circuit.laps || 3;
     difficulty = DIFF[opts.difficulty] ? opts.difficulty : 'medium';

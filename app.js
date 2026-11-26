@@ -1,5 +1,6 @@
-// Formula for Victory: the app around the racing. Title screen, choosing a circuit, setting up a race, credits,
-// the Install button and the little sounds. The racing itself (race.js and three.js) is only loaded when it is needed.
+// Formula for Victory: the app around the racing. The title screen and main menu, choosing a circuit, setting up a race,
+// how to play, settings, credits and the Install button. The championship's screens are in championship.js, the sounds
+// in sound.js, and the teams and drivers in teams.js. The racing itself (race.js and three.js) is only loaded when needed.
 'use strict';
 
 if ('serviceWorker' in navigator && !/[?&]nosw\b/.test(location.search)) {   // ("?nosw": testing only, so a test always sees the newest files)
@@ -19,36 +20,13 @@ const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<':
 const fmtTime = t => t == null ? '–' : `${Math.floor(t / 60)}:${(t % 60).toFixed(2).padStart(5, '0')}`;
 
 // =====================================================================
-//  SOUND (made in code) AND MESSAGES
+//  TAP SOUNDS AND MESSAGES (the sounds themselves are made in sound.js)
 // =====================================================================
-let audioCtx = null;
-function getAudio() {
-    try {
-        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        return audioCtx;
-    } catch (e) { return null; }
-}
-function tone(ctx, { freq, to = freq, dur = .2, type = 'sine', vol = .2, delay = 0 }) {
-    const t = ctx.currentTime + delay, osc = ctx.createOscillator(), gain = ctx.createGain();
-    osc.type = type; osc.frequency.setValueAtTime(freq, t); osc.frequency.exponentialRampToValueAtTime(to, t + dur);
-    gain.gain.setValueAtTime(vol, t); gain.gain.exponentialRampToValueAtTime(.001, t + dur);
-    osc.connect(gain); gain.connect(ctx.destination); osc.start(t); osc.stop(t + dur + .02);
-}
-function playSound(type) {
-    if (!store('raceSound', true)) return;
-    const ctx = getAudio(); if (!ctx) return;
-    switch (type) {
-        case 'click': tone(ctx, { freq: 900, to: 1200, dur: .05, type: 'square', vol: .04 }); break;
-        case 'rev':   // a quick engine blip
-            tone(ctx, { freq: 70, to: 210, dur: .35, type: 'sawtooth', vol: .09 });
-            tone(ctx, { freq: 140, to: 420, dur: .35, type: 'square', vol: .03 });
-            tone(ctx, { freq: 210, to: 90, dur: .4, type: 'sawtooth', vol: .06, delay: .33 }); break;
-        case 'win': [523, 659, 784, 1047].forEach((f, i) => tone(ctx, { freq: f, dur: .22, type: 'triangle', vol: .16, delay: i * .08 })); break;
-        case 'lose': tone(ctx, { freq: 220, to: 90, dur: .35, type: 'sawtooth', vol: .1 }); break;
-    }
-}
-window.getAudio = getAudio; window.playSound = playSound;
+// every button makes a little sound when it is tapped: a brighter one for the big buttons, a falling one for going back
+document.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b || b.disabled || b.classList.contains('pad-btn')) return;
+    playSound(b.classList.contains('back-btn') || b.classList.contains('home') ? 'back' : b.classList.contains('big-btn') || b.classList.contains('menu-card') ? 'go' : 'click');
+}, true);
 let toastTimer = null;
 function toast(msg, ms = 1800) {
     const el = document.getElementById('toast');
@@ -63,21 +41,34 @@ let units = store('units', 'mph') === 'kmh' ? 'kmh' : 'mph';
 const unitsBtn = document.getElementById('units-btn');
 const showUnits = () => { unitsBtn.textContent = units === 'mph' ? 'MPH' : 'KM/H'; };
 window.getUnits = () => units;
-window.toggleUnits = () => { units = units === 'mph' ? 'kmh' : 'mph'; storeSet('units', units); showUnits(); if (current === 'setup') renderSetup(); };
-unitsBtn.addEventListener('click', () => { window.toggleUnits(); playSound('click'); });
+window.toggleUnits = () => { units = units === 'mph' ? 'kmh' : 'mph'; storeSet('units', units); showUnits(); if (current === 'setup') renderSetup(); if (current === 'settings') renderSettings(); };
+// the loudspeaker button: all sound on or off (the same switch as the one on the racing screen and in Settings)
+const soundBtn = document.getElementById('sound-btn');
+const showSound = () => { soundBtn.textContent = FFVSound.on ? '🔊' : '🔇'; soundBtn.classList.toggle('off', !FFVSound.on); soundBtn.setAttribute('aria-pressed', String(FFVSound.on)); };
+soundBtn.addEventListener('click', () => { FFVSound.setOn(!FFVSound.on); if (FFVSound.on) playSound('click'); });
+document.addEventListener('ffv-sound', () => { showSound(); if (current === 'settings') renderSettings(); });
+showSound();
+unitsBtn.addEventListener('click', () => window.toggleUnits());
 showUnits();
 
 // =====================================================================
 //  SCREENS
 // =====================================================================
 let current = 'title';
+let intent = 'race';                            // what the circuit and set-up screens are for: a quick 'race' or a time 'trial'
 const racing = () => document.body.classList.contains('racing');
-function show(name) {
+// show a screen (extra: something for that screen to know, e.g. the championship's 'after' the race view)
+function show(name, extra) {
+    if (current === 'champ' && window.leaveChamp) window.leaveChamp();   // (stops the confetti and the fanfare)
     current = name;
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
     document.querySelector('.nav-btn.home').classList.toggle('active', name === 'title');
+    if (name === 'title') renderTitle();
     if (name === 'circuits') renderCircuits();
     if (name === 'setup') renderSetup();
+    if (name === 'champ') renderChamp(extra);
+    if (name === 'help') renderHelp();
+    if (name === 'settings') renderSettings();
     if (name === 'credits') renderCredits();
     window.scrollTo(0, 0);
 }
@@ -85,8 +76,19 @@ document.addEventListener('click', e => {
     const b = e.target.closest('[data-screen]'); if (!b) return;
     // (the Back button comes here too: during a race it pauses instead of leaving)
     if (racing()) { document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true })); return; }
-    playSound('click'); show(b.dataset.screen);
+    show(b.dataset.screen);
 });
+// the main menu's three big buttons
+document.querySelector('.menu-cards').addEventListener('click', e => {
+    const b = e.target.closest('[data-menu]'); if (!b) return;
+    if (b.dataset.menu === 'champ') show('champ'); else { intent = b.dataset.menu === 'trial' ? 'trial' : 'race'; show('circuits'); }
+});
+// the Championship button says where your season has got to
+function renderTitle() {
+    const el = document.getElementById('mc-champ'), S = FFV.season, s = S.load();
+    el.textContent = !s ? 'Five races. One champion.' : S.finished(s) ? 'Season finished: see the final table.' : s.results.length ? `Carry on: race ${s.results.length + 1} of ${s.rounds.length} is next.` : 'Your season is ready: race 1 is next.';
+    drawTitleArt();
+}
 
 // =====================================================================
 //  CIRCUITS
@@ -117,33 +119,35 @@ function drawOutline(canvas, geo, size, lineWidth = 4, crossover = null) {
     x.beginPath(); x.moveTo(lineWidth * 5, 0); x.lineTo(lineWidth * 2, -lineWidth * 1.6); x.lineTo(lineWidth * 2, lineWidth * 1.6); x.fill(); x.restore();
 }
 function renderCircuits() {
-    const grid = document.getElementById('circuit-grid');
+    const grid = document.getElementById('circuit-grid'), trial = intent === 'trial';
+    document.getElementById('circuits-kicker').textContent = trial ? 'Time trial' : 'Quick race';
     loadCircuits().then(list => {
         grid.innerHTML = list.map(c => c.soon
             ? `<div class="circuit-card soon"><span class="cc-soon">COMING SOON</span><div class="cc-map"><span>🔒</span></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)}</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span></div>`
-            : `<button class="circuit-card" data-circuit="${c.id}"><div class="cc-map"><canvas></canvas></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)} · ${c.km.toFixed(3)} km</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span><span class="act-btn cc-go">Race here</span></button>`).join('');
-        for (const c of list) if (!c.soon) loadCircuit(c).then(data => { const cv = grid.querySelector(`[data-circuit="${c.id}"] canvas`); if (cv) drawOutline(cv, data.geo, 120, 3, data.crossover); });
-    });
+            : `<button class="circuit-card" data-circuit="${c.id}"><div class="cc-map"><canvas></canvas></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)} · ${c.km.toFixed(3)} km</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span><span class="act-btn cc-go">${trial ? 'Drive here' : 'Race here'}</span></button>`).join('');
+        for (const c of list) if (!c.soon) loadCircuit(c).then(data => { const cv = grid.querySelector(`[data-circuit="${c.id}"] canvas`); if (cv) drawOutline(cv, data.geo, 120, 3, data.crossover); }).catch(() => { /* its little map is left blank; choosing it tries again */ });
+    }).catch(() => { grid.innerHTML = '<p class="small">The circuits could not load. Check your connection and try again.</p>'; });
 }
 document.getElementById('circuit-grid').addEventListener('click', e => {
     const b = e.target.closest('[data-circuit]'); if (!b) return;
     const info = circuitList.find(c => c.id === b.dataset.circuit); if (!info || info.soon) return;
-    playSound('click');
-    loadCircuit(info).then(data => { chosen = { info, data }; show('setup'); });
+    loadCircuit(info).then(data => { chosen = { info, data }; show('setup'); }).catch(() => toast('That circuit could not load. Check your connection and try again.', 5000));
 });
 
 // =====================================================================
 //  SETTING UP A RACE
 // =====================================================================
-// (the ten made-up teams: the same list as in race.js, kept here too so the menu opens without loading the 3D parts)
-const TEAMS = [['Team Apex', '#F4F6F8', '#FF6D00'], ['Nitro Racing', '#1E3A8A', '#FFB300'], ['Velocity GP', '#00A86B', '#F4F6F8'], ['Bolt Motorsport', '#FFB300', '#1B1F26'],
-    ['Rocket Racing', '#1B1F26', '#C6FF00'], ['Comet Speed', '#7E57C2', '#F4F6F8'], ['Peak Performance', '#D81B60', '#F4F6F8'], ['Thunder GP', '#00B8D9', '#1B1F26'],
-    ['Falcon Racing', '#FF6D00', '#1B1F26'], ['Storm Motorsport', '#C6FF00', '#1B1F26']];
+const TEAMS = FFV.TEAMS;   // (the ten made-up teams and their drivers: see teams.js)
 const opts = { laps: [3, 5].includes(store('laps', 3)) ? store('laps', 3) : 3, difficulty: ['easy', 'medium', 'hard'].includes(store('difficulty', 'easy')) ? store('difficulty', 'easy') : 'easy',
     weather: 'sunny', team: Math.max(0, Math.min(9, store('team', 5) | 0)), quality: ['auto', 'low', 'medium', 'high'].includes(store('raceQuality', 'auto')) ? store('raceQuality', 'auto') : 'auto' };
+// the row of round team badges to choose from, and the line under it naming the one chosen
+function teamDots(active, kind) {
+    return TEAMS.map((t, i) => `<button class="team-dot ${i === active ? 'active' : ''}" data-${kind}="team" data-val="${i}" style="background:${t.paint};--stripe:${t.stripe}" aria-label="${escapeHtml(t.team)}" title="${escapeHtml(t.team)}"></button>`).join('');
+}
+const teamLine = i => `${escapeHtml(TEAMS[i].team)} <small>car ${TEAMS[i].number}</small>`;
 function renderSetup() {
     if (!chosen) { show('circuits'); return; }
-    const c = chosen.data, best = store('raceBest_' + c.id, null), medals = store('medals', {});
+    const c = chosen.data, best = store('raceBest_' + c.id, null), medals = store('medals', {}), trial = intent === 'trial';
     const medalFor = k => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[medals[c.id + '_' + k]] || '');
     const km = c.geo.realLength / 1000, len = units === 'mph' ? `${(km * 0.621371).toFixed(2)} miles` : `${km.toFixed(3)} km`;
     const row = (key, list, label) => `<div class="opts">${list.map(([v, text]) => `<button class="opt ${opts[key] === v ? 'active' : ''}" data-opt="${key}" data-val="${v}">${text}</button>`).join('')}</div>`;
@@ -151,7 +155,7 @@ function renderSetup() {
     const night = c.time === 'night';
     const timeRow = night ? `<p class="b-label">Time of day</p><div class="opts"><button class="opt" disabled aria-disabled="true">☀️ Day</button><button class="opt" disabled aria-disabled="true">🌇 Sunset</button><button class="opt active locked" disabled aria-pressed="true">🌙 Night</button></div><p class="small opt-note">This race is always at night, under the floodlights.</p>` : '';
     document.getElementById('setup').innerHTML = `
-        <div class="screen-head"><h1><span class="kicker">${chosen.info.flag} ${escapeHtml(c.country)}</span>${escapeHtml(c.title || c.name)}</h1></div>
+        <div class="screen-head"><h1><span class="kicker">${trial ? 'Time trial' : 'Quick race'} · ${chosen.info.flag} ${escapeHtml(c.country)}</span>${escapeHtml(c.title || c.name)}</h1></div>
         <div class="setup-grid">
             <div class="panel">
                 <div class="setup-map"><canvas id="setup-map"></canvas></div>
@@ -160,22 +164,23 @@ function renderSetup() {
             </div>
             <div class="panel">
                 <p class="b-label" style="margin-top:0">Your team</p>
-                <div class="team-dots">${TEAMS.map(([name, paint, stripe], i) => `<button class="team-dot ${i === opts.team ? 'active' : ''}" data-opt="team" data-val="${i}" style="background:${paint};--stripe:${stripe}" aria-label="${name}" title="${name}"></button>`).join('')}</div>
-                <p class="team-name">${TEAMS[opts.team][0]}</p>
-                <p class="b-label">Race length</p>
+                <div class="team-dots">${teamDots(opts.team, 'opt')}</div>
+                <p class="team-name">${teamLine(opts.team)}</p>
+                ${trial ? '' : `<p class="b-label">Race length</p>
                 ${row('laps', [[3, '3 laps'], [5, '5 laps']])}
                 <p class="b-label">Rivals</p>
-                ${row('difficulty', [['easy', 'Easy ' + medalFor('easy')], ['medium', 'Medium ' + medalFor('medium')], ['hard', 'Hard ' + medalFor('hard')]])}
+                ${row('difficulty', [['easy', 'Easy ' + medalFor('easy')], ['medium', 'Medium ' + medalFor('medium')], ['hard', 'Hard ' + medalFor('hard')]])}`}
                 ${timeRow}
                 <p class="b-label">Weather (looks only: the car grips just the same)</p>
                 ${row('weather', night ? [['sunny', '✨ Clear night'], ['cloudy', '☁️ Cloudy night'], ['rain', '🌧️ Rain']] : [['sunny', '☀️ Sunny'], ['cloudy', '☁️ Grey skies'], ['rain', '🌧️ Rain']])}
                 <p class="b-label">Graphics</p>
                 ${row('quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']])}
-                <div class="mode-btns"><button class="big-btn" data-go="race">🏁 Race</button><button class="big-btn alt" data-go="trial">⏱ Time trial</button></div>
-                <p class="small" style="margin-top:10px">Race: ten cars, you start at the back. Time trial: the track to yourself, chasing your own best lap.</p>
+                <div class="mode-btns">${trial ? '<button class="big-btn" data-go="trial">⏱ Start the time trial</button>' : '<button class="big-btn" data-go="race">🏁 Race</button>'}</div>
+                <p class="small" style="margin-top:10px">${trial ? 'Time trial: the track to yourself, chasing your own best lap. Beat it and a see-through ghost of your best lap races you.' : 'Race: ten cars, and you start at the back. How many can you pass?'}
+                    <button class="link-btn inline" data-intent="${trial ? 'race' : 'trial'}">${trial ? 'Race here instead' : 'Do a time trial here instead'}</button></p>
             </div>
         </div>
-        <div class="panel how"><h3>How to drive</h3><p><b>Tablet and phone:</b> hold the arrows on the left to steer, and the pedals on the right to go and brake. You can also turn on tilt steering. <b>Driving help</b> (on at the start) slows you down in time for the corners and nudges you back onto the road. <b>Laptop:</b> arrow keys or W A S D, C changes the camera, Esc pauses. Lower Graphics if the racing feels jerky.</p></div>`;
+        <div class="panel how"><h3>How to drive</h3><p><b>Tablet and phone:</b> hold the arrows on the left to steer, and the pedals on the right to go and brake. <b>Laptop:</b> arrow keys or W A S D. <b>Driving help</b> (on at the start) slows you down in time for the corners. Lower Graphics if the racing feels jerky. <button class="link-btn inline" data-screen="help">More in How to play</button></p></div>`;
     drawOutline(document.getElementById('setup-map'), c.geo, Math.min(300, window.innerWidth - 90), 4, c.crossover);
 }
 document.getElementById('setup').addEventListener('click', e => {
@@ -183,12 +188,15 @@ document.getElementById('setup').addEventListener('click', e => {
     if (b.dataset.opt) {
         const k = b.dataset.opt, v = k === 'laps' || k === 'team' ? +b.dataset.val : b.dataset.val;
         opts[k] = v; if (k !== 'weather') storeSet(k === 'quality' ? 'raceQuality' : k, v);
-        playSound('click'); renderSetup(); return;
+        renderSetup(); return;
     }
+    if (b.dataset.intent) { intent = b.dataset.intent === 'trial' ? 'trial' : 'race'; renderSetup(); return; }
     if (b.dataset.go) startRace(b.dataset.go);
 });
 let raceModule = null;
-function startRace(mode) {
+// Start the racing. o: anything that differs from the set-up screen's choices (the championship gives its own circuit,
+// laps, rivals, weather and team, and is told when the race finishes: see championship.js)
+function startRace(mode, o = {}) {
     const veil = document.getElementById('loading'); if (!veil.hidden) return;   // (a second tap while it is loading)
     getAudio(); playSound('rev');
     veil.hidden = false;
@@ -196,13 +204,78 @@ function startRace(mode) {
     requestAnimationFrame(() => requestAnimationFrame(() => {
         (raceModule ? Promise.resolve(raceModule) : import('./race.js').then(m => (raceModule = window.__race = m)))
             .then(m => {
-                const ok = m.start({ circuit: chosen.data, mode, laps: opts.laps, difficulty: opts.difficulty, weather: opts.weather, team: opts.team, quality: opts.quality, onExit: () => show('setup') });
+                const ok = m.start({ circuit: o.circuit || chosen.data, mode, laps: o.laps || opts.laps, difficulty: o.difficulty || opts.difficulty, weather: o.weather || opts.weather,
+                    team: o.team ?? opts.team, quality: opts.quality, champ: o.champ || null, onExit: o.onExit || (() => show('setup')) });
                 veil.hidden = true;
                 if (!ok) toast("This device or browser can't show 3D graphics, so racing can't start.", 5000);
             })
             .catch(err => { veil.hidden = true; console.error(err); toast('The race could not load. Check your connection and try again.', 5000); });
     }));
 }
+
+// =====================================================================
+//  HOW TO PLAY
+// =====================================================================
+function renderHelp() {
+    const pts = FFV.season.POINTS;
+    document.getElementById('help').innerHTML = `
+        <div class="help-grid">
+            <div class="panel help-card"><h3>🎮 On a tablet or phone</h3>
+                <div class="help-pads" aria-hidden="true"><span class="hp round">◀</span><span class="hp round">▶</span><i></i><span class="hp brake">BRAKE</span><span class="hp gas">GO</span></div>
+                <p>Hold the <b>arrows</b> on the left to steer. Hold <b>GO</b> on the right to speed up and <b>BRAKE</b> to slow down. You can use both thumbs at once.</p>
+                <p class="small">Like tilting instead? Tap <b>📱 Tilt</b> at the top of the racing screen and steer by tipping the tablet.</p></div>
+            <div class="panel help-card"><h3>⌨️ On a laptop</h3>
+                <div class="help-keys" aria-hidden="true"><span><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span><span>or</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></div>
+                <p><b>Up</b> to go, <b>Down</b> or <b>Space</b> to brake, <b>Left</b> and <b>Right</b> to steer. <b>C</b> changes the camera and <b>Esc</b> pauses.</p></div>
+            <div class="panel help-card"><h3>🛞 Driving help</h3>
+                <p>Driving help is <b>on</b> when you start. It slows the car in time for each corner and nudges you back onto the road, so you can keep your thumb on GO and enjoy the race.</p>
+                <p>Feeling brave? Tap <b>🛞 Driving help</b> at the top of the racing screen to turn it off. Then the braking is all up to you: brake <b>before</b> the corner, then steer.</p></div>
+            <div class="panel help-card"><h3>🚨 The light on the back of your car</h3>
+                <p><span class="lamp red"></span><b>Red</b> means <b>you</b> are braking.</p>
+                <p><span class="lamp amber"></span><b>Amber</b> means the <b>driving help</b> is braking for you. Watch where it comes on: that is where to brake when you switch the help off.</p>
+                <p class="small">The other cars' red lights tell you when they are slowing down, too.</p></div>
+            <div class="panel help-card"><h3>💨 Racing tips</h3>
+                <p><b>Slipstream:</b> tuck in close behind another car on a straight. It punches a hole in the air and you go faster: the word SLIPSTREAM lights up. Then pull out and pass!</p>
+                <p><b>Stay on the road:</b> grass and gravel slow you right down. <b>🎥 Camera</b> swaps between four views, one from the driver's seat.</p>
+                <p class="small">Rain and grey skies only change how things look. The car grips just the same.</p></div>
+            <div class="panel help-card"><h3>🎬 After the flag</h3>
+                <p>The top three cars go up on the <b>podium</b>, with everyone's lap times underneath. Finish in the top three and you get confetti!</p>
+                <p>Tap <b>Watch replay</b> to see your race again from the TV cameras, bumps and all.</p>
+                <p class="small">In a time trial there are no rivals: a see-through ghost of your best lap races against you.</p></div>
+            <div class="panel help-card wide"><h3>🏆 The championship</h3>
+                <p>A season is <b>five races</b>, one on each circuit, against the same nine drivers. You choose your team, how many laps each race has, and how quick the rivals are. You start every race at the back.</p>
+                <p>The first ten home score points:</p>
+                <div class="points-row">${pts.map((p, i) => `<span class="pt ${i < 3 ? 'p' + (i + 1) : ''}"><small>${i + 1}${['st', 'nd', 'rd'][i] || 'th'}</small><b>${p}</b></span>`).join('')}</div>
+                <p>After each race you see who scored what and how the table has changed: <b class="up">▲</b> means a driver has moved up, <b class="down">▼</b> means down. Most points after five races wins the trophy.</p>
+                <p class="small">Your season is saved after every race, so you can stop and carry on another day. If you leave in the middle of a race, that race starts again from the grid.</p></div>
+        </div>
+        <div class="help-go"><button class="big-btn" data-screen="title">Got it</button></div>`;
+}
+
+// =====================================================================
+//  SETTINGS (each one is remembered on this device)
+// =====================================================================
+function renderSettings() {
+    const line = (label, key, value, list, note = '') => `<div class="set-row"><div class="set-label"><b>${label}</b>${note ? `<small>${note}</small>` : ''}</div><div class="opts">${list.map(([v, text]) => `<button class="opt ${value === v ? 'active' : ''}" data-set="${key}" data-val="${v}" aria-pressed="${value === v}">${text}</button>`).join('')}</div></div>`;
+    document.getElementById('settings').innerHTML =
+        line('Sound', 'sound', FFVSound.on, [[true, '🔊 On'], [false, '🔇 Off']], 'Everything: engines, crowd and menus.') +
+        line('Volume', 'volume', FFVSound.volume, [[1, 'Quiet'], [2, 'Medium'], [3, 'Loud']]) +
+        line('Engine sound', 'engine', store('raceEngine', true) !== false, [[true, 'On'], [false, 'Off']], 'Off keeps the other sounds but hushes your engine.') +
+        line('Speed shown in', 'units', units, [['mph', 'MPH'], ['kmh', 'KM/H']]) +
+        line('Driving help', 'help', store('raceHelp', true) !== false, [[true, 'On'], [false, 'Off']], 'Slows you for the corners and nudges you back onto the road.') +
+        line('Graphics', 'quality', opts.quality, [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], 'Auto picks for you. Choose Low if the racing feels jerky.');
+}
+document.getElementById('settings').addEventListener('click', e => {
+    const b = e.target.closest('[data-set]'); if (!b) return;
+    const k = b.dataset.set, v = b.dataset.val, yes = v === 'true';
+    if (k === 'sound') { FFVSound.setOn(yes); if (yes) playSound('click'); return; }              // (these two redraw the screen themselves)
+    if (k === 'volume') { FFVSound.setVolume(+v); if (!FFVSound.on) FFVSound.setOn(true); playSound('go'); return; }
+    if (k === 'engine') storeSet('raceEngine', yes);
+    if (k === 'help') storeSet('raceHelp', yes);
+    if (k === 'units' && v !== units) { window.toggleUnits(); return; }
+    if (k === 'quality') { opts.quality = v; storeSet('raceQuality', v); }
+    renderSettings();
+});
 
 // =====================================================================
 //  CREDITS
@@ -274,12 +347,18 @@ function drawCarShape(x, w, col) {
     x.restore();
 }
 function drawTitleArt() {
-    const c = document.getElementById('title-art'), w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
+    const c = document.getElementById('title-art'), wrap = c.parentElement;
+    // The car stands along the bottom of the screen, under the buttons, and room is kept for it there. On a screen too
+    // short for that (a phone on its side) it is drawn faintly behind everything instead.
+    const roomy = window.innerHeight >= 600, carW = Math.min(wrap.clientWidth * 0.86, roomy ? 600 : 520);
+    wrap.style.paddingBottom = roomy ? Math.round(carW * 0.2 + 34) + 'px' : '';
+    const w = c.clientWidth, h = c.clientHeight; if (!w || !h) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1); c.width = w * dpr; c.height = h * dpr;
     const x = c.getContext('2d'); x.scale(dpr, dpr);
-    const g = x.createRadialGradient(w / 2, h * 0.45, 20, w / 2, h * 0.45, Math.max(w, h) * 0.7); g.addColorStop(0, 'rgba(225,6,0,.22)'); g.addColorStop(1, 'rgba(225,6,0,0)');
-    x.fillStyle = g; x.fillRect(0, 0, w, h);
-    const cw = Math.min(w * 0.86, 820), cx0 = (w - cw) / 2, ground = h * 0.93;
+    // a red glow behind the logo, fading right out before the edges of the picture
+    const g = x.createRadialGradient(0, 0, 0.02, 0, 0, 1); g.addColorStop(0, 'rgba(225,6,0,.24)'); g.addColorStop(1, 'rgba(225,6,0,0)');
+    x.save(); x.translate(w / 2, h * 0.42); x.scale(w / 2, h * 0.58); x.fillStyle = g; x.fillRect(-1, -1, 2, 2); x.restore();
+    const cw = carW, cx0 = (w - cw) / 2, ground = h - 12;
     // speed streaks streaming back from the car (behind it, to the left)
     x.save(); x.translate(0, ground);
     ['rgba(225,6,0,.42)', 'rgba(255,179,0,.32)', 'rgba(0,229,255,.24)'].forEach((col, i) => {
@@ -294,10 +373,10 @@ function drawTitleArt() {
     const layer = document.createElement('canvas'); layer.width = c.width; layer.height = c.height;
     const lx = layer.getContext('2d'); lx.scale(dpr, dpr); lx.translate(cx0, ground);
     drawCarShape(lx, cw, { body: '#59545a', wing: '#7a777e', helmet: '#c98a00', halo: '#8a8890', shine: '#c9ccd2', stripe: '#e10600', tyre: '#050608', rim: '#6d6c72' });
-    x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 0.55; x.drawImage(layer, 0, 0); x.restore();
+    x.save(); x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = roomy ? 0.7 : 0.22; x.drawImage(layer, 0, 0); x.restore();
 }
 window.addEventListener('resize', drawTitleArt);
-drawTitleArt(); if (document.fonts) document.fonts.ready.then(drawTitleArt);
+renderTitle(); if (document.fonts) document.fonts.ready.then(drawTitleArt);
 
 // =====================================================================
 //  "INSTALL APP" BUTTON
