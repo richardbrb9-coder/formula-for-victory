@@ -92,6 +92,9 @@ export function buildTrackData(C) {
         s.wl = s.hw + s.L.w; s.wr = s.hw + s.R.w;        // how far each wall is from the middle of the road
         s.tunnel = 0; for (const [from, to] of C.tunnels || []) s.tunnel = Math.max(s.tunnel, zoneFactor(s.d, from + 30, to - 40, trackLen, 40));   // how far inside a tunnel (0 outside, 1 well inside)
         s.roofed = (C.tunnels || []).some(([from, to]) => zoneFactor(s.d, from, to, trackLen, 1) > 0);
+        // a circuit that crosses over itself: which samples are up on the bridge ('deck'), and which pass underneath it
+        // ('under': how many metres of headroom there are, so the camera can be kept below the bridge)
+        if (C.crossover) { s.deck = zoneFactor(s.d, C.crossover.over[0], C.crossover.over[1], trackLen, 1) > 0; s.under = zoneFactor(s.d, C.crossover.under[0], C.crossover.under[1], trackLen, 1) > 0 ? C.crossover.clear : 0; }
         s.line = Math.sign(k2[i]) * Math.min(s.hw * 0.6, Math.abs(k2[i]) * 900);   // the racing line: towards the inside of each corner
     });
     // kerbs: on every corner, sloping down into the ground at each end

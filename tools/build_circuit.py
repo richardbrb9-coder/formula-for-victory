@@ -58,6 +58,31 @@ CIRCUITS = {
         'step': 3, 'smooth': 1.6,
         'extras': {'pitlane': [[850261588]]},
     },
+    'suzuka': {
+        'file': 'suzuka.json', 'real_length': 5807,
+        # the Grand Prix lap (the full figure of eight), from the main straight: clockwise through the First Curve, the
+        # S Curves, Degner and the Hairpin, then anticlockwise round Spoon and back along the West Straight, which crosses
+        # OVER the stretch between Degner and the Hairpin on a bridge. (The East and West short circuits' link roads, the
+        # kart tracks and the amusement park's rides, whose ways are in the same file, are left out.)
+        'lap': [183391665, 183391643, 183391645, 183391644, 183391657, 183391636, 183391635, 183391628, 183391634,
+                183391629, 183391633, 183391631, 183391632, 183391630, 183391642, 411295349, 183391641, 183391656,
+                183391664, 183391655, 183391662, 183391658, 183391646, 183391659, 183391651, 411295347, 183391649,
+                183391647, 411295351, 183391648, 411295348, 175231434, 183391652, 183391660, 411289989, 183391637,
+                183391639, 183391638, 183391640, 183391661],
+        'start': 330,                 # the line is on the main straight, about 450 m before the First Curve
+        'step': 4, 'smooth': 2.5,
+        'keep_names': False,          # (the map's corner names include sponsors' names, which this game never shows)
+        'extras': {'pitlane': [[120917578]]},
+    },
+    'lasvegas': {
+        'file': 'lasvegas_rel.json', 'relation': 16696508, 'real_length': 6201,
+        # every 'forward' and 'backward' member of the 'Las Vegas Strip Circuit' relation, in the order the relation lists
+        # them: anticlockwise from the start line (the pit lane and the alternative line it also lists are left out)
+        'lap': 'members',
+        'start_role': 'start',
+        'step': 4, 'smooth': 4,
+        'extras': {'pitlane': [[1223479152]]},
+    },
 }
 
 def metres(lat0):
@@ -131,6 +156,7 @@ def main(cid):
         ways = {m['ref']: {'id': m['ref'], 'geometry': m['geometry'], 'tags': {}} for m in rel['members'] if m['type'] == 'way'}
         for m in rel['members']:
             if m['type'] == 'node' and m.get('role') == C.get('start_role'): start_ll = (m['lon'], m['lat'])
+        if C['lap'] == 'members': C['lap'] = [m['ref'] for m in rel['members'] if m['type'] == 'way' and m.get('role') in ('forward', 'backward')]
         ll = chain_by_position(ways, C['lap'], True)
         join = lambda ids: (chain_by_position(ways, ids), None)
     else:
@@ -176,6 +202,8 @@ def main(cid):
             g, _ = join(ids)
             line = resample([proj(p) for p in g], 6.0, False) if len(g) > 2 or key != 'bridges' else [proj(p) for p in g]
             extras[key].append([round(v, 1) for p in line for v in p])
+    for n in names: print('  ', n)
+    if C.get('keep_names') is False: names = []
     flat = [round(v, 2) for p in pts for v in p]
     # the raw mapped outline too, for checking the game's track against the map (not used when racing)
     outline = [round(v, 1) for p in raw for v in p]
@@ -188,7 +216,6 @@ def main(cid):
         f.write('// pts: the centre line as x, z pairs in metres (x east, z south), a closed loop in racing direction from the start line.\n')
         f.write('export const GEO = ' + json.dumps(geo, separators=(',', ':'), ensure_ascii=False) + ';\n')
     print(f'{cid}: mapped {raw_len:.1f} m, in game {final_len:.1f} m, real {C["real_length"]} m ({(final_len / C["real_length"] - 1) * 100:+.2f}%), {len(pts)} points')
-    for n in names: print('  ', n)
 
 if __name__ == '__main__':
     main(sys.argv[1] if len(sys.argv) > 1 else 'monza')

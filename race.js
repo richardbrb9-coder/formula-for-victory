@@ -410,7 +410,7 @@ function drivePlayer(dt) {
     if (go && r.v > 20) for (const o of rivals) {
         const dx = o.x - r.x, dz = o.z - r.z, fx2 = Math.cos(r.heading), fz2 = -Math.sin(r.heading);
         const ahead = dx * fx2 + dz * fz2, side = Math.abs(-dx * fz2 + dz * fx2);
-        if (ahead > 3 && ahead < 22 && side < 2.6) { r.slip = true; break; }
+        if (ahead > 3 && ahead < 22 && side < 2.6 && Math.abs(o.y - r.y) < 3) { r.slip = true; break; }   // (not a car on a bridge above you)
     }
     if (go) { r.driveTime = (r.driveTime || 0) + dt; if (onGrass) r.grassTime = (r.grassTime || 0) + dt; }
     const vmax = onGrass ? Math.min(P.vmax, gravel ? 24 : 30) : P.vmax;
@@ -791,7 +791,7 @@ function buildTvCams() {
     // trackside cameras every 110 m, on alternating sides, on poles behind the barriers
     tvCams = [];
     for (let d = 40, k = 0; d < trackLen; d += 110, k++) {
-        if (sampleAt(d).roofed) continue;
+        if (sampleAt(d).roofed || sampleAt(d).deck || sampleAt(d).under) continue;   // (none in a tunnel, on a bridge or under one)
         const side = k % 2 ? 1 : -1, sm = sampleAt(d), p = pathAt(d, side * ((side > 0 ? sm.wl : sm.wr) + 1.5), 0);   // just behind the barrier
         tvCams.push({ d, pos: new THREE.Vector3(p.x, p.y + 4.8 + (k % 3) * 1.6, p.z) });   // (above the catch fence)
     }
@@ -840,7 +840,9 @@ function replayPose(t) {
         const a = A[k], b = B[k]; if (!a || !b) return;
         c.x = a[0] + (b[0] - a[0]) * u; c.z = a[1] + (b[1] - a[1]) * u; c.heading = a[2] + wrapAngle(b[2] - a[2]) * u;
         c.steer = a[3] + (b[3] - a[3]) * u; c.v = a[4] + (b[4] - a[4]) * u;
-        // which part of the lap the car is on (for the road's height under it): near where it was, or anywhere after a jump
+        // which part of the lap the car is on (for the road's height under it): the tape says (so a car on a bridge is
+        // never mistaken for one on the road beneath it); an old tape without it: near where it was, or anywhere after a jump
+        if (a[5] != null) { c.idx = (u < 0.5 ? a : b)[5] % N; return; }
         c.idx = nearestIndex(c); const p = samples[c.idx].p;
         if ((c.x - p.x) ** 2 + (c.z - p.z) ** 2 > 900) { let bd = Infinity; for (let i = 0; i < N; i += 2) { const q = samples[i].p, dd = (c.x - q.x) ** 2 + (c.z - q.z) ** 2; if (dd < bd) { bd = dd; c.idx = i; } } }
     });
@@ -857,7 +859,7 @@ function replayFrame(dt) {
     // the director: cut to the next shot every few seconds (a trackside shot lasts until the cars have passed)
     R.shotT += dt;
     const shot = SHOTS[R.shot % SHOTS.length], r = player;
-    const pd = ((pathAtNearest(r)) % trackLen + trackLen) % trackLen;
+    const pd = samples[r.idx].d;   // (where the car is on the lap: replayPose has just set it)
     if (shot === 'trackside') {
         if (!R.cam) { R.cam = tvCams.reduce((best, c) => { const ahead = ((c.d - pd) % trackLen + trackLen) % trackLen; return ahead > 20 && ahead < 90 && ahead < (best ? best.ahead : 1e9) ? { c, ahead } : best; }, null); }
         const past = R.cam ? ((pd - R.cam.c.d) % trackLen + trackLen) % trackLen : 0;
@@ -870,12 +872,6 @@ function replayFrame(dt) {
     drawFrame();
 }
 function nextShot(R) { R.shot++; R.shotT = 0; R.cam = null; R.side = Math.random() < 0.5 ? 1 : -1; const el = document.getElementById('rp-shot'); if (el) el.textContent = { trackside: 'Trackside camera', heli: 'Helicopter', low: 'On-board camera', front: 'Front camera', side: 'Tracking camera' }[SHOTS[R.shot % SHOTS.length]]; }
-// where along the track a car is (searching the whole track, since a replay can jump anywhere)
-function pathAtNearest(r) {
-    let best = 0, bd = Infinity;
-    for (let i = 0; i < N; i += 2) { const p = samples[i].p, dx = r.x - p.x, dz = r.z - p.z, dd = dx * dx + dz * dz; if (dd < bd) { bd = dd; best = i; } }
-    return samples[best].d;
-}
 function placeReplayCamera(shot, R, dt) {
     const r = player, fx = Math.cos(r.heading), fz = -Math.sin(r.heading), car = new THREE.Vector3(r.x, r.y + 0.7, r.z), y = r.y;
     if (samples[r.idx].roofed && (shot === 'heli' || shot === 'trackside')) shot = 'low';   // (in a tunnel: the on-board camera)
@@ -909,6 +905,7 @@ function keepCameraInside() {
     }
     if (camPos.y < s.p.y + 0.7) camPos.y = s.p.y + 0.7;   // (low enough for the replay's low on-board shot, which sits at 0.8)
     if (s.roofed) camPos.y = Math.min(camPos.y, s.p.y + (TRACK.tunnelHeight || 5.6) - 0.9);
+    if (s.under) camPos.y = Math.min(camPos.y, s.p.y + s.under - 0.9);   // (passing under a bridge: below its deck)
 }
 // Inside a tunnel the daylight fades out (the tunnel's own lamps light its walls), and comes back as you near the far end
 let tunnelNow = 0;
@@ -965,6 +962,11 @@ function drawMapBase() {
     const x = mapBase.getContext('2d'); x.lineJoin = 'round';
     const trace = () => { x.beginPath(); for (let i = 0; i < N; i += 2) { const s = samples[i], px = s.p.x * mapScale + mapOff[0], pz = s.p.z * mapScale + mapOff[1]; i ? x.lineTo(px, pz) : x.moveTo(px, pz); } x.closePath(); x.stroke(); };
     x.lineWidth = 7; x.strokeStyle = 'rgba(10,12,16,.75)'; trace(); x.lineWidth = 3.5; x.strokeStyle = 'rgba(255,255,255,.92)'; trace();
+    if (TRACK.crossover) {   // where the track crosses itself, the bridge is drawn again on top, so you can see which road goes over
+        const i0 = T.indexAt(TRACK.crossover.over[0] - 30), i1 = T.indexAt(TRACK.crossover.over[1] + 30);
+        const part = () => { x.beginPath(); for (let i = i0; i <= i1; i++) { const s = samples[i], px = s.p.x * mapScale + mapOff[0], pz = s.p.z * mapScale + mapOff[1]; i > i0 ? x.lineTo(px, pz) : x.moveTo(px, pz); } x.stroke(); };
+        x.lineCap = 'butt'; x.lineWidth = 8; x.strokeStyle = 'rgb(10,12,16)'; part(); x.lineWidth = 3.5; x.strokeStyle = 'rgb(255,255,255)'; part();
+    }
     const s0 = samples[0]; x.fillStyle = '#E10600'; x.save(); x.translate(s0.p.x * mapScale + mapOff[0], s0.p.z * mapScale + mapOff[1]); x.rotate(-s0.heading); x.fillRect(-1.5, -7, 3, 14); x.restore();   // the start line
 }
 function drawMap() {
@@ -1300,7 +1302,7 @@ function watchFrameRate(dt) {
 function frame(now) {
     raf = requestAnimationFrame(frame);
     renderer.info.reset();   // (counted over the whole frame: shadows, reflections and the picture itself)
-    const dt = Math.min(0.05, (now - lastT) / 1000 || 0), t0 = performance.now(); if (window.__bench) window.__bench.gap.push(now - lastT);
+    const dt = Math.min(0.05, (now - lastT) / 1000 || 0) * (window.__timeScale || 1), t0 = performance.now();   // (__timeScale: testing only, a test lap in less time; the driving still runs in the same small steps) if (window.__bench) window.__bench.gap.push(now - lastT);
     lastT = now;
     if (window.__mapView && T) { mapFrame(); return; }   // (testing: the whole circuit from above, with the OpenStreetMap outline drawn over it)
     if (!race || race.paused) { if (sky) sky.position.copy(camera.position); drawFrame(); return; }
@@ -1326,7 +1328,7 @@ function frame(now) {
     // the replay tape: every car, ten times a second, from the start until a few seconds after you finish
     if ((race.phase === 'go' || race.phase === 'done') && (race.tapeEnd == null || race.raceTime < race.tapeEnd)) {
         race.tapeT = (race.tapeT || 0) + dt;
-        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v])); }
+        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v, c.idx])); }
     }
     if (mode === 'trial' && race.phase === 'go') {
         race.recT = (race.recT || 0) + dt;
@@ -1569,6 +1571,7 @@ export function start(opts) {
     if (opts.quality && opts.quality !== qualitySetting) { qualitySetting = opts.quality; storeSet('raceQuality', qualitySetting); applyQuality(qualitySetting === 'auto' ? autoQuality() : qualitySetting); }
     const wk = WEATHERS[opts.weather] ? opts.weather : 'sunny', changed = wk !== weatherKind; weatherKind = wk;
     const fresh = TRACK !== opts.circuit;
+    timeOfDay = SC.TIMES[opts.circuit.time] ? opts.circuit.time : 'day';   // (a circuit can be a night race: see lasvegas.js)
     loadCircuit(opts.circuit);
     if (changed && !fresh) setAtmosphere(TRACK.theme);
     document.getElementById('race-units').textContent = (window.getUnits && window.getUnits() === 'kmh') ? 'KM/H' : 'MPH';
@@ -1627,6 +1630,7 @@ function mapFrame() {
 }
 export function testGridCam(t) { if (!race || !race.grid) return false; if (t == null && race.grid.hold != null) race.grid.t = race.grid.hold; race.grid.hold = t; return true; }   // testing only: hold the grid flyover at a moment (null lets it run on from there)
 export function sceneForTest() { return scene; }   // testing only
+export function trackForTest() { return T; }   // testing only
 export function testTime(t) { if (!SC.TIMES[t]) return false; timeOfDay = t; if (world && TRACK) setAtmosphere(TRACK.theme); return true; }   // testing only: 'day', 'sunset' or 'night'
 export function rivalsForTest() { return rivals.map(r => [Math.round(((r.d % trackLen) + trackLen) % trackLen), Math.round(r.v * 3.6), +r.y.toFixed(1)]); }   // testing only: where each rival is, its speed (km/h) and height
 export function ghostForTest() { return ghost && ghost.holder.visible ? [+ghost.holder.position.x.toFixed(1), +ghost.holder.position.y.toFixed(2), +ghost.holder.position.z.toFixed(1)] : null; }   // testing only
