@@ -1,4 +1,4 @@
-const CACHE_NAME = 'formula-for-victory-v14'; // Bump this on every change so tablets pick up the new version
+const CACHE_NAME = 'formula-for-victory-v15'; // Bump this on every change so tablets pick up the new version
 const CACHE_PREFIX = 'formula-for-victory-'; // Only this app's own caches are ever deleted: every app on richardbrb9-coder.github.io shares the same cache storage
 
 // Everything is stored inside the app (no CDNs), and all addresses are relative so it works in a GitHub Pages subfolder.
@@ -12,6 +12,9 @@ const CORE_FILES = [
     './sound.js',
     './season.js',
     './championship.js',
+    './cards.js',
+    './cardart.js',
+    './teamdesign.js',
     './manifest.json',
     './race.js',
     './track.js',

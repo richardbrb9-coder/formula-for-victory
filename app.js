@@ -61,6 +61,7 @@ const racing = () => document.body.classList.contains('racing');
 function show(name, extra) {
     if (current === 'champ' && window.leaveChamp) window.leaveChamp();   // (stops the confetti and the fanfare)
     if (current === 'teams' && name !== 'teams') FFV.myTeams.leave();
+    if (current === 'cards' && name !== 'cards' && window.FFVCards) window.FFVCards.leave();
     current = name;
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
     document.querySelector('.nav-btn.home').classList.toggle('active', name === 'title');
@@ -71,6 +72,7 @@ function show(name, extra) {
     if (name === 'help') renderHelp();
     if (name === 'settings') renderSettings();
     if (name === 'teams') FFV.myTeams.render();
+    if (name === 'cards' && window.FFVCards) window.FFVCards.open();
     if (name === 'credits') renderCredits();
     window.scrollTo(0, 0);
 }
@@ -80,10 +82,10 @@ document.addEventListener('click', e => {
     if (racing()) { document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape', key: 'Escape', bubbles: true })); return; }
     show(b.dataset.screen);
 });
-// the main menu's three big buttons
+// the main menu's four big buttons
 document.querySelector('.menu-cards').addEventListener('click', e => {
     const b = e.target.closest('[data-menu]'); if (!b) return;
-    if (b.dataset.menu === 'champ') show('champ'); else { intent = b.dataset.menu === 'trial' ? 'trial' : 'race'; show('circuits'); }
+    if (b.dataset.menu === 'champ') show('champ'); else if (b.dataset.menu === 'cards') show('cards'); else { intent = b.dataset.menu === 'trial' ? 'trial' : 'race'; show('circuits'); }
 });
 // the Championship button says where your season has got to
 function renderTitle() {
@@ -141,6 +143,7 @@ document.getElementById('circuit-grid').addEventListener('click', e => {
 // =====================================================================
 const TEAMS = FFV.TEAMS;   // (the eleven made-up teams and their drivers: see teams.js)
 const opts = { laps: [3, 5].includes(store('laps', 3)) ? store('laps', 3) : 3, difficulty: ['easy', 'medium', 'hard'].includes(store('difficulty', 'easy')) ? store('difficulty', 'easy') : 'easy',
+    quali: store('quali', false) === true,   // qualifying before a quick race: off unless it has been switched on
     weather: 'sunny', team: Math.max(0, Math.min(TEAMS.length - 1, store('team', 5) | 0)), quality: ['auto', 'low', 'medium', 'high'].includes(store('raceQuality', 'auto')) ? store('raceQuality', 'auto') : 'auto' };
 // the row of round team badges to choose from, and the line under it naming the one chosen
 function teamDots(active, kind) {
@@ -172,13 +175,16 @@ function renderSetup() {
                 ${row('laps', [[3, '3 laps'], [5, '5 laps']])}
                 <p class="b-label">Rivals</p>
                 ${row('difficulty', [['easy', 'Easy ' + medalFor('easy')], ['medium', 'Medium ' + medalFor('medium')], ['hard', 'Hard ' + medalFor('hard')]])}`}
+                ${trial ? '' : `<p class="b-label">Qualifying</p>
+                ${row('quali', [[false, 'Off'], [true, '⏱ On']])}
+                <p class="small opt-note">${opts.quali ? 'On: before the race you drive one flying lap on your own. The quicker your lap, the nearer the front you start.' : 'Off: you start the race at the back of the grid.'}</p>`}
                 ${timeRow}
                 <p class="b-label">Weather (looks only: the car grips just the same)</p>
                 ${row('weather', night ? [['sunny', '✨ Clear night'], ['cloudy', '☁️ Cloudy night'], ['rain', '🌧️ Rain']] : [['sunny', '☀️ Sunny'], ['cloudy', '☁️ Grey skies'], ['rain', '🌧️ Rain']])}
                 <p class="b-label">Graphics</p>
                 ${row('quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']])}
                 <div class="mode-btns">${trial ? '<button class="big-btn" data-go="trial">⏱ Start the time trial</button>' : '<button class="big-btn" data-go="race">🏁 Race</button>'}</div>
-                <p class="small" style="margin-top:10px">${trial ? 'Time trial: the track to yourself, chasing your own best lap. Beat it and a see-through ghost of your best lap races you.' : 'Race: eleven cars, and you start at the back. How many can you pass?'}
+                <p class="small" style="margin-top:10px">${trial ? 'Time trial: the track to yourself, chasing your own best lap. Beat it and a see-through ghost of your best lap races you.' : opts.quali ? 'Race: eleven cars. First, one flying lap to decide where you start. Can you take pole position?' : 'Race: eleven cars, and you start at the back. How many can you pass?'}
                     <button class="link-btn inline" data-intent="${trial ? 'race' : 'trial'}">${trial ? 'Race here instead' : 'Do a time trial here instead'}</button></p>
             </div>
         </div>
@@ -188,7 +194,7 @@ function renderSetup() {
 document.getElementById('setup').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.opt) {
-        const k = b.dataset.opt, v = k === 'laps' || k === 'team' ? +b.dataset.val : b.dataset.val;
+        const k = b.dataset.opt, v = k === 'laps' || k === 'team' ? +b.dataset.val : k === 'quali' ? b.dataset.val === 'true' : b.dataset.val;
         opts[k] = v; if (k !== 'weather') storeSet(k === 'quality' ? 'raceQuality' : k, v);
         renderSetup(); return;
     }
@@ -208,7 +214,9 @@ function startRace(mode, o = {}) {
         Promise.race([FFV.logosReady, new Promise(r => setTimeout(r, 1500))]).then(() => raceModule ? raceModule : import('./race.js').then(m => (raceModule = window.__race = m)))
             .then(m => {
                 const ok = m.start({ circuit: o.circuit || chosen.data, mode, laps: o.laps || opts.laps, difficulty: o.difficulty || opts.difficulty, weather: o.weather || opts.weather,
-                    team: o.team ?? opts.team, quality: opts.quality, champ: o.champ || null, onExit: o.onExit || (() => show('setup')) });
+                    team: o.team ?? opts.team, quality: opts.quality, champ: o.champ || null, onExit: o.onExit || (() => show('setup')),
+                    // qualifying first, if it is switched on (a championship race says for itself, and may already know its grid)
+                    quali: mode === 'race' && ('quali' in o ? !!o.quali : opts.quali), grid: o.grid || null, onGrid: o.onGrid || null });
                 veil.hidden = true;
                 if (!ok) toast("This device or browser can't show 3D graphics, so racing can't start.", 5000);
             })
@@ -245,8 +253,16 @@ function renderHelp() {
                 <p>The top three cars go up on the <b>podium</b>, with everyone's lap times underneath. Finish in the top three and you get confetti!</p>
                 <p>Tap <b>Watch replay</b> to see your race again from the TV cameras, bumps and all.</p>
                 <p class="small">In a time trial there are no rivals: a see-through ghost of your best lap races against you.</p></div>
+            <div class="panel help-card"><h3>⏱ Qualifying</h3>
+                <p>Switch <b>Qualifying</b> on when you set up a race or a season. Before each race you then get the track to yourself: drive up to the line, then do <b>one flying lap</b> as fast as you can. You can have one more go, and your quicker lap counts.</p>
+                <p>Everyone's lap times set the starting grid. The quickest starts at the front, on <b>pole position</b>.</p>
+                <p class="small">In a hurry? <b>Skip qualifying</b> starts you at the back, just like a race with qualifying off.</p></div>
+            <div class="panel help-card"><h3>🃏 Driver Cards</h3>
+                <p>A card game against the computer. Every driver has a card with numbers on it. Pick the number you think beats the computer's card: the <b>higher number wins</b> both cards.</p>
+                <p>One number is different: for <b>Debut year</b> the <b>earlier</b> year wins. Win all the cards, or have the most when the rounds run out.</p>
+                <p class="small">Your own card also shows what you have won in this game.</p></div>
             <div class="panel help-card wide"><h3>🏆 The championship</h3>
-                <p>A season is <b>five races</b>, one on each circuit, against the same ten drivers. You choose your team, how many laps each race has, and how quick the rivals are. You start every race at the back.</p>
+                <p>A season is <b>five races</b>, one on each circuit, against the same ten drivers. You choose your team, how many laps each race has, and how quick the rivals are. You start every race at the back, unless you switch <b>qualifying</b> on.</p>
                 <p>The first ten home score points:</p>
                 <div class="points-row">${pts.map((p, i) => `<span class="pt ${i < 3 ? 'p' + (i + 1) : ''}"><small>${i + 1}${['st', 'nd', 'rd'][i] || 'th'}</small><b>${p}</b></span>`).join('')}</div>
                 <p>After each race you see who scored what and how the table has changed: <b class="up">▲</b> means a driver has moved up, <b class="down">▼</b> means down. Most points after five races wins the trophy.</p>
@@ -384,7 +400,7 @@ renderTitle(); if (document.fonts) document.fonts.ready.then(drawTitleArt);
 // a teams.csv has been loaded: its first team becomes the one you drive for (you can still choose another)
 document.addEventListener('ffv-first-team', () => { opts.team = 0; storeSet('team', 0); if (typeof champDraft !== 'undefined') { champDraft.team = 0; storeSet('champSetup', champDraft); } });
 // a family's own team names or logos have changed (or have just been read): redraw whichever screen shows them
-document.addEventListener('ffv-teams', () => { if (racing()) return; if (current === 'setup') renderSetup(); if (current === 'champ') renderChamp('keep'); });
+document.addEventListener('ffv-teams', () => { if (racing()) return; if (current === 'setup') renderSetup(); if (current === 'champ') renderChamp('keep'); if (current === 'cards' && window.FFVCards) window.FFVCards.teamsChanged(); });
 
 // =====================================================================
 //  "INSTALL APP" BUTTON

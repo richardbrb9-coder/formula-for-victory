@@ -85,6 +85,7 @@
                     <button class="menu-card champ" data-menu="champ"><span class="mc-icon" aria-hidden="true">🏆</span><span class="mc-text"><b>Championship</b><small id="mc-champ">Five races. One champion.</small></span></button>
                     <button class="menu-card" data-menu="race"><span class="mc-icon" aria-hidden="true">🏁</span><span class="mc-text"><b>Quick race</b><small>One race on any circuit.</small></span></button>
                     <button class="menu-card" data-menu="trial"><span class="mc-icon" aria-hidden="true">⏱️</span><span class="mc-text"><b>Time trial</b><small>Just you against the clock.</small></span></button>
+                    <button class="menu-card cards" data-menu="cards"><span class="mc-icon" aria-hidden="true">🃏</span><span class="mc-text"><b>Driver Cards</b><small>A card game against the computer.</small></span></button>
                 </nav>
                 <div class="menu-small">
                     <button class="chip-btn" data-screen="help">❓ How to play</button>
@@ -114,6 +115,12 @@
         <section id="screen-champ" class="screen">
             <button class="back-btn" data-screen="title">‹ Menu</button>
             <div id="champ"></div>
+        </section>
+
+        <!-- DRIVER CARDS: a card game against the computer (see cards.js) -->
+        <section id="screen-cards" class="screen">
+            <button class="back-btn" data-screen="title">‹ Menu</button>
+            <div id="cards"></div>
         </section>
 
         <!-- HOW TO PLAY -->
@@ -151,6 +158,7 @@
     <div class="race-stage" id="race-stage" hidden>
         <div class="race-canvas-wrap" id="race-canvas-wrap">
             <div class="race-hud" id="race-hud"></div>
+            <div class="race-tower" id="race-tower"></div>
             <canvas class="race-map" id="race-map" width="180" height="180"></canvas>
             <div class="race-flash" id="race-flash"></div>
             <div class="race-corner" id="race-corner"></div>
@@ -160,7 +168,7 @@
             </div>
             <div class="pad pad-left"><button class="pad-btn" data-pad="left" aria-label="Steer left">◀</button><button class="pad-btn" data-pad="right" aria-label="Steer right">▶</button></div>
             <div class="pad pad-right"><button class="pad-btn brake" data-pad="brake" aria-label="Brake">BRAKE</button><button class="pad-btn gas" data-pad="gas" aria-label="Accelerate">GO</button></div>
-            <div class="race-panel" id="race-pause-panel" hidden><div class="rr-box"><h2>Paused</h2><p class="small" id="race-pause-note" hidden>Your season is saved. If you quit now, this race starts again from the grid next time.</p><div class="rr-actions"><button class="big-btn" data-race="resume">Keep racing</button><button class="act-btn ghost" data-race="menu">Quit to menu</button></div></div></div>
+            <div class="race-panel" id="race-pause-panel" hidden><div class="rr-box"><h2>Paused</h2><p class="small" id="race-pause-note" hidden>Your season is saved. If you quit now, this race starts again from the grid next time.</p><div class="rr-actions"><button class="big-btn" data-race="resume">Keep racing</button><button class="act-btn" id="race-qskip" data-race="qskip" hidden>Skip qualifying</button><button class="act-btn ghost" data-race="menu">Quit to menu</button></div></div></div>
             <div class="race-panel" id="race-result" hidden></div>
         </div>
     </div>
@@ -176,5 +184,6 @@
     <script src="season.js"></script>
     <script src="app.js"></script>
     <script src="championship.js"></script>
+    <script src="cards.js"></script>
 </body>
 </html>

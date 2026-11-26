@@ -4,7 +4,9 @@ A Grand Prix racing game for ages 9 to 12: single-seater racing cars on real cir
 Supercar Legends. Plain JavaScript and three.js, installable (a PWA), and it works with no internet: nothing is loaded
 from other websites.
 
-**Phase 4 (this version):** a championship season across all five circuits, a main menu with Championship, Quick
+**Stage 5 (this version):** every driver is shown by name (yours with a small YOU tag), every helmet is painted in
+its team's colours, a race can begin with optional qualifying, and there is a new card game, Driver Cards.
+**Phase 4:** a championship season across all five circuits, a main menu with Championship, Quick
 race and Time trial, a How to play screen, Settings (with a volume control), and a crowd, countdown and fanfare made in
 code. The five circuits: Monza, Silverstone, Monaco, Suzuka (a figure of eight: the track crosses over itself on a
 bridge) and Las Vegas (a street circuit, always raced at night).
@@ -16,6 +18,9 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 | `index.html`, `style.css`, `app.js` | The app: title and main menu, choose a circuit, set up a race, How to play, Settings, credits, Install button |
 | `teams.js` | **The one place** for every team name, driver name, team colour and car number |
 | `myteams.js` | My teams: a family's own names, colours and logos, kept on their device only |
+| `teamdesign.js` | Turns a team into a car for the car builder (paint, pattern, logo, helmet colours): used by the racing and by the cards' pictures |
+| `cards.js` | Driver Cards: the card game against the computer (rules, screens, the saved pictures) |
+| `cardart.js` | Draws each card's car and helmet from the 3D models into two small pictures (only loaded when the cards are opened) |
 | `season.js` | The championship's rules: the order of the races, the points, the tables, saving and mending a season |
 | `championship.js` | The championship's screens: a new season, the season so far, after each race, the champion |
 | `sound.js` | The volume control every sound goes through, menu taps, countdown beeps, the crowd and the fanfare |
@@ -41,6 +46,15 @@ bridge) and Las Vegas (a street circuit, always raced at night).
   change one, change it there. Never change a team's `id`: saved seasons remember teams by it.
 - All of them are made up, and must stay made up: no real teams, drivers, sponsors or brands, and never the name of a
   real racing series. Drivers are only ever shown in a helmet.
+- **Your driver's name, not "You".** Wherever you appear (the racing screen's little tower, results, podium,
+  qualifying, every championship table) it is by your team's driver's name with a small YOU tag (`FFV.youTag`), and
+  your row is lit. Headlines still talk to you ("You win!").
+- **Helmets.** Every driver's helmet is in the team's three colours: the shell in `paint`, a broad stripe over the top
+  in `stripe`, a ring round the crown in `paint2`, and always a dark visor (`helmetedDriver` in `carmodel.js`; the
+  colours come from `helmet` in `teamdesign.js`). The colours are three more squares in the small strip of colours
+  the cockpit parts already share, so a helmet adds nothing extra to draw. A family's own colours are used the same way.
+- Each team also has made-up card numbers (`top`, and `stats`: wins, poles, podiums, titles, debut) for Driver Cards,
+  and `LEGENDS` lists five more made-up cards that only exist in that game.
 - There are eleven teams, so eleven cars on the grid. Add a team to the table and the grid, the results, the points
   tables and the championship all follow (points still go to the top ten only).
 
@@ -67,8 +81,8 @@ make it. First line: the column names. Then one line a team, for the eleven cars
 one you drive for (you can still choose another on the set-up screens).
 
 ```
-team,driver,number,colour1,colour2,colour3,pattern,logo
-Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg
+team,driver,number,colour1,colour2,colour3,pattern,logo,wins,poles,podiums,titles,debut
+Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,200,9,1975
 ```
 
 - Only `team` is needed. A missing column changes nothing; an empty or unreadable box goes back to that team's usual.
@@ -77,6 +91,10 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg
   `logo` column the pictures go to the teams in A to Z order.
 - `pattern` is one of: `plain`, `stripe`, `twin-stripe`, `side-stripes`, `two-tone`, `chequer`, `lightning`, `racing`,
   `bands`, `chevrons` (the car painter's own styles: `PATTERNS` in `teams.js`). Left out, a team keeps its usual one.
+- The last five columns are optional, and are the numbers on that team's Driver Card: `wins`, `poles`, `podiums` and
+  `titles` are whole numbers from 0 to 999, and `debut` is a year from 1950 to 2100. Anything else in those boxes
+  (words, sums, minus numbers, decimals) is ignored and the made-up number is used. They are kept with the names in
+  `ffv_names`, on the device only, and "Export my teams" writes them out again. (Top speed is the game's own.)
 - Read forgivingly: quoted boxes, spare spaces, Windows line endings, blank lines, unknown columns. At most 50 lines,
   names cut to 30 letters. Everything is plain text: nothing in the file is ever worked out or run, and a name such as
   `=1+1` is just a name. On the My teams screen names are put on the page as text, never as markup; the tables
@@ -94,8 +112,42 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg
   next race of the season, so nothing can be counted twice. `check()` mends old or damaged saves.
 - The rivals' places on the grid come from each driver's `pace` in `teams.js` plus some luck (`grid()`); the cars
   themselves are as quick as in a single race. With eleven teams of one car each, the teams' table follows the drivers'.
+- With qualifying on, the grid comes from qualifying instead (see below) and `grid()` is not used.
 - Testing: `window.__autopilot = true` (or `__kidbot`), `__noGridCam = true` and `__timeScale = 4` play a race quickly.
   Keep `__timeScale` at 4 or less: higher than that the cars' springs go wrong and the bodies vanish from the podium.
+
+## Qualifying (optional)
+
+- "Qualifying: On / Off" is on the quick race set-up (`ffv_quali`) and on the new-season screen (kept in the season as
+  `quali`). Off is how it always was: you start at the back. A time trial has none.
+- On: before the race you are alone on the track (`mode === 'quali'` in `race.js`). You set off 220 m before the line,
+  the clock starts as you cross it, and one flying lap is timed. You may have one more go; the quicker lap counts. Your
+  time-trial ghost shows if you have one.
+- The rivals' laps are worked out, not driven (`simLap`): the same sums that drive a rival in a race, run round two
+  laps with nobody in the way, for the quickest and slowest car at this level of rivals. Each driver's time sits
+  between the two by their `pace`, with some luck. So the grid is honest: a rival who qualifies ahead is quicker in the
+  race too, and a good lap can win pole.
+- **Skip qualifying** (on its first panel and on the pause box) puts you at the back, exactly like qualifying off, so
+  skipping can never beat driving a lap.
+- The grid flyover and the race then start from those places. "Race again" keeps the same grid.
+- In the championship the grid is saved in the season the moment it is set (`grid: { round, order }`, see `season.js`).
+  Leave after qualifying, or part-way through the race, and next time the race starts straight from that grid. The grid
+  is dropped once the race is recorded. A season saved before qualifying existed has `quali` off.
+
+## Driver Cards (`cards.js`, `cardart.js`)
+
+- 16 cards: the eleven drivers and five legends. Six numbers each: wins, poles, podiums, championships, top speed
+  (km/h) and debut year. The higher number wins both cards; for **debut year the earlier year wins**. A tie puts both
+  cards in the middle for the next winner.
+- You and the computer take turns to pick, you first. (Winner-keeps-the-pick let whoever got ahead run away with the
+  game, because picking your own card's best number wins most rounds.) Easy: the computer picks any number. Normal: it
+  picks the number its card is best at, compared with the whole pack.
+- A short game is 10 rounds (most cards wins); a full game goes on until one side has every card (50 rounds at most).
+- The pictures are drawn from the real 3D car and helmet, once, and kept in the browser's own database `ffv_cards`
+  (they may show a family's logo, so they never leave the device; "Clear my teams" wipes them). They are drawn again
+  only when a team's name, colours, pattern, number or logo changes. No photographs, no faces.
+- Your own team's card also shows what you have done in this game (`ffv_stats`: races, wins, podiums, poles, titles).
+- `window.__cardRand` (testing) makes the shuffle repeatable.
 
 ## Sound
 
