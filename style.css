@@ -53,6 +53,12 @@ h1, h2, h3 { font-family: var(--head); font-weight: 400; letter-spacing: .02em; 
 .opt { background: var(--panel-2); border: 1px solid var(--line-2); padding: 9px 12px; font-weight: 700; font-size: .86rem; color: var(--text); }
 .opt:hover { border-color: var(--cyan); }
 .opt.active { background: var(--red); border-color: var(--red); color: #fff; }
+/* a choice that can't be changed (a night race is always at night): the others are greyed out and crossed through */
+.opt:disabled { opacity: .38; cursor: default; text-decoration: line-through; }
+.opt:disabled:hover { border-color: var(--line-2); }
+.opt.locked:disabled { opacity: 1; text-decoration: none; }
+.opt.locked:disabled:hover { border-color: var(--red); }
+.opt-note { margin: 6px 0 0; }
 .rr-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; align-items: center; }
 .how { margin-top: 14px; }
 .how h3 { margin-bottom: 6px; }

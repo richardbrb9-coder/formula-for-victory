@@ -95,8 +95,9 @@ let circuitList = null, chosen = null;          // chosen: { info (from the list
 const loaded = {};
 function loadCircuits() { return circuitList ? Promise.resolve(circuitList) : import('./circuits/index.js').then(m => (circuitList = m.CIRCUITS)); }
 function loadCircuit(info) { return loaded[info.id] ? Promise.resolve(loaded[info.id]) : info.load().then(c => (loaded[info.id] = c)); }
-// a circuit's outline, drawn from its centre line (north at the top)
-function drawOutline(canvas, geo, size, lineWidth = 4) {
+// a circuit's outline, drawn from its centre line (north at the top). crossover: for a track that crosses over itself,
+// which part is the bridge (it is drawn again on top, with a gap in the road beneath it, so you can see which goes over)
+function drawOutline(canvas, geo, size, lineWidth = 4, crossover = null) {
     const P = geo.pts; let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
     for (let i = 0; i < P.length; i += 2) { minX = Math.min(minX, P[i]); maxX = Math.max(maxX, P[i]); minZ = Math.min(minZ, P[i + 1]); maxZ = Math.max(maxZ, P[i + 1]); }
     const w = maxX - minX, h = maxZ - minZ, pad = 10, k = (size - pad * 2) / Math.max(w, h), dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -105,6 +106,11 @@ function drawOutline(canvas, geo, size, lineWidth = 4) {
     const x = canvas.getContext('2d'); x.scale(dpr, dpr); x.lineJoin = 'round';
     const trace = () => { x.beginPath(); for (let i = 0; i < P.length; i += 2) { const px = pad + (P[i] - minX) * k, pz = pad + (P[i + 1] - minZ) * k; i ? x.lineTo(px, pz) : x.moveTo(px, pz); } x.closePath(); x.stroke(); };
     x.strokeStyle = '#3D4451'; x.lineWidth = lineWidth + 4; trace(); x.strokeStyle = '#F4F6F8'; x.lineWidth = lineWidth; trace();
+    if (crossover) {
+        const n = P.length / 2, at = d => Math.round(d / geo.length * n), i0 = at(crossover.over[0] - 45), i1 = at(crossover.over[1] + 45);
+        const part = () => { x.beginPath(); for (let i = i0; i <= i1; i++) { const px = pad + (P[i * 2] - minX) * k, pz = pad + (P[i * 2 + 1] - minZ) * k; i > i0 ? x.lineTo(px, pz) : x.moveTo(px, pz); } x.stroke(); };
+        x.lineCap = 'butt'; x.strokeStyle = '#3D4451'; x.lineWidth = lineWidth + 5; part(); x.strokeStyle = '#F4F6F8'; x.lineWidth = lineWidth; part();
+    }
     // the start line and an arrow showing which way the cars go
     const sx = pad + (P[0] - minX) * k, sz = pad + (P[1] - minZ) * k, ax = P[4] - P[0], az = P[5] - P[1], al = Math.hypot(ax, az) || 1;
     x.save(); x.translate(sx, sz); x.rotate(Math.atan2(az, ax)); x.fillStyle = '#E10600'; x.fillRect(-2, -lineWidth * 2, 4, lineWidth * 4);
@@ -116,7 +122,7 @@ function renderCircuits() {
         grid.innerHTML = list.map(c => c.soon
             ? `<div class="circuit-card soon"><span class="cc-soon">COMING SOON</span><div class="cc-map"><span>🔒</span></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)}</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span></div>`
             : `<button class="circuit-card" data-circuit="${c.id}"><div class="cc-map"><canvas></canvas></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)} · ${c.km.toFixed(3)} km</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span><span class="act-btn cc-go">Race here</span></button>`).join('');
-        for (const c of list) if (!c.soon) loadCircuit(c).then(data => { const cv = grid.querySelector(`[data-circuit="${c.id}"] canvas`); if (cv) drawOutline(cv, data.geo, 120, 3); });
+        for (const c of list) if (!c.soon) loadCircuit(c).then(data => { const cv = grid.querySelector(`[data-circuit="${c.id}"] canvas`); if (cv) drawOutline(cv, data.geo, 120, 3, data.crossover); });
     });
 }
 document.getElementById('circuit-grid').addEventListener('click', e => {
@@ -141,6 +147,9 @@ function renderSetup() {
     const medalFor = k => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[medals[c.id + '_' + k]] || '');
     const km = c.geo.realLength / 1000, len = units === 'mph' ? `${(km * 0.621371).toFixed(2)} miles` : `${km.toFixed(3)} km`;
     const row = (key, list, label) => `<div class="opts">${list.map(([v, text]) => `<button class="opt ${opts[key] === v ? 'active' : ''}" data-opt="${key}" data-val="${v}">${text}</button>`).join('')}</div>`;
+    // a night race (Las Vegas) is always at night: the other times of day are shown, but can't be chosen
+    const night = c.time === 'night';
+    const timeRow = night ? `<p class="b-label">Time of day</p><div class="opts"><button class="opt" disabled aria-disabled="true">☀️ Day</button><button class="opt" disabled aria-disabled="true">🌇 Sunset</button><button class="opt active locked" disabled aria-pressed="true">🌙 Night</button></div><p class="small opt-note">This race is always at night, under the floodlights.</p>` : '';
     document.getElementById('setup').innerHTML = `
         <div class="screen-head"><h1><span class="kicker">${chosen.info.flag} ${escapeHtml(c.country)}</span>${escapeHtml(c.title || c.name)}</h1></div>
         <div class="setup-grid">
@@ -157,8 +166,9 @@ function renderSetup() {
                 ${row('laps', [[3, '3 laps'], [5, '5 laps']])}
                 <p class="b-label">Rivals</p>
                 ${row('difficulty', [['easy', 'Easy ' + medalFor('easy')], ['medium', 'Medium ' + medalFor('medium')], ['hard', 'Hard ' + medalFor('hard')]])}
+                ${timeRow}
                 <p class="b-label">Weather (looks only: the car grips just the same)</p>
-                ${row('weather', [['sunny', '☀️ Sunny'], ['cloudy', '☁️ Grey skies'], ['rain', '🌧️ Rain']])}
+                ${row('weather', night ? [['sunny', '✨ Clear night'], ['cloudy', '☁️ Cloudy night'], ['rain', '🌧️ Rain']] : [['sunny', '☀️ Sunny'], ['cloudy', '☁️ Grey skies'], ['rain', '🌧️ Rain']])}
                 <p class="b-label">Graphics</p>
                 ${row('quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']])}
                 <div class="mode-btns"><button class="big-btn" data-go="race">🏁 Race</button><button class="big-btn alt" data-go="trial">⏱ Time trial</button></div>
@@ -166,7 +176,7 @@ function renderSetup() {
             </div>
         </div>
         <div class="panel how"><h3>How to drive</h3><p><b>Tablet and phone:</b> hold the arrows on the left to steer, and the pedals on the right to go and brake. You can also turn on tilt steering. <b>Driving help</b> (on at the start) slows you down in time for the corners and nudges you back onto the road. <b>Laptop:</b> arrow keys or W A S D, C changes the camera, Esc pauses. Lower Graphics if the racing feels jerky.</p></div>`;
-    drawOutline(document.getElementById('setup-map'), c.geo, Math.min(300, window.innerWidth - 90), 4);
+    drawOutline(document.getElementById('setup-map'), c.geo, Math.min(300, window.innerWidth - 90), 4, c.crossover);
 }
 document.getElementById('setup').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
@@ -200,13 +210,13 @@ function startRace(mode) {
 function renderCredits() {
     const link = (url, text) => `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
     document.getElementById('credits').innerHTML = `
-        <p><b>Formula for Victory</b> is a racing game for ages 9 to 12. It is a spin-off of the racing in Supercar Legends. The cars, teams, drivers and sponsors are all made up: this game is not connected with any racing series, team or circuit owner.</p>
+        <p><b>Formula for Victory</b> is a racing game for ages 9 to 12. It is a spin-off of the racing in Supercar Legends. The cars, teams, drivers and sponsors are all made up, and so is every hotel, shop and sign beside the track: this game is not connected with any racing series, team, circuit owner or company.</p>
         <h3>Circuit maps</h3>
         <p>The shape of every circuit is traced from map data © ${link('https://www.openstreetmap.org/copyright', 'OpenStreetMap contributors')}, used under the ${link('https://opendatacommons.org/licenses/odbl/', 'Open Database Licence (ODbL)')}. The data was straightened into a single lap, smoothed a little and saved inside the game. Thank you to everyone who maps the world for OpenStreetMap.</p>
         <h3>3D and fonts</h3>
         <p><b>3D:</b> ${link('https://threejs.org', 'three.js')} © 2010–2025 three.js authors, MIT licence (the full licence is saved inside the game: ${link('lib/three-LICENSE.txt', 'read it')}). <b>Fonts:</b> Orbitron, Russo One and Exo 2, all under the SIL Open Font Licence, saved inside the game.</p>
         <h3>Pictures used on the track</h3>
-        <p><b>Textures</b> (asphalt, grass, sand): CC0 textures by Rob Tuytel and Charlotte Baglioni from ${link('https://polyhaven.com', 'Poly Haven')}. <b>Skies:</b> CC0 photographed skies from Poly Haven: <i>Kloofendal 43d Clear (Pure Sky)</i> by Greg Zaal (Monaco), <i>Farm Field (Pure Sky)</i> by Dimitrios Savva and Jarod Guest (Silverstone), <i>Qwantani Late Afternoon (Pure Sky)</i> by Greg Zaal and Jarod Guest (Monza), <i>Kloofendal Overcast (Pure Sky)</i> by Greg Zaal (grey skies and rain), and sunset and night skies by Greg Zaal, Jarod Guest and Dimitrios Savva. The hills, woods, fields and towns on the horizon are painted by the game. <b>Trees:</b> pictures made in Blender from CC0 tree models from Poly Haven by Rob Tuytel, Rico Cilliers, James Ray Cock and Jenelle van Heerden. The cars, grandstands, pit buildings and everything else are drawn in code or were modelled for Supercar Legends.</p>
+        <p><b>Textures</b> (asphalt, grass, sand): CC0 textures by Rob Tuytel and Charlotte Baglioni from ${link('https://polyhaven.com', 'Poly Haven')}. <b>Skies:</b> CC0 photographed skies from Poly Haven: <i>Kloofendal 43d Clear (Pure Sky)</i> by Greg Zaal (Monaco), <i>Farm Field (Pure Sky)</i> by Dimitrios Savva and Jarod Guest (Silverstone and Suzuka), <i>Qwantani Late Afternoon (Pure Sky)</i> by Greg Zaal and Jarod Guest (Monza), <i>Kloofendal Overcast (Pure Sky)</i> by Greg Zaal (grey skies and rain), and sunset and night skies by Greg Zaal, Jarod Guest and Dimitrios Savva (the night sky is the one over Las Vegas). The hills, woods, fields and towns on the horizon are painted by the game. <b>Trees:</b> pictures made in Blender from CC0 tree models from Poly Haven by Rob Tuytel, Rico Cilliers, James Ray Cock and Jenelle van Heerden. The cars, grandstands, pit buildings and everything else are drawn in code or were modelled for Supercar Legends.</p>
         <h3>Engine sounds</h3>
         <p>Recordings from Wikimedia Commons, cut into short loops: V8: ${link('https://commons.wikimedia.org/wiki/File:Rover-v8-rr79.ogg', 'recording')} by Collard at English Wikipedia, public domain; V10/V12: ${link('https://commons.wikimedia.org/wiki/File:M70.ogg', 'recording')} by Johannes Maximilian, ${link('https://creativecommons.org/licenses/by-sa/4.0/', 'CC BY-SA 4.0')}; high revs: ${link('https://commons.wikimedia.org/wiki/File:Ford_Sierra_RS_Cosworth_(tuned,_about_600_hp)_-_engine_and_exhaust_sound_(YouTube_7e3q50wwmNE).opus', 'recording')} by hggi.car (YouTube), ${link('https://creativecommons.org/licenses/by/3.0/', 'CC BY 3.0')}; start roar: ${link('https://commons.wikimedia.org/wiki/File:Pagani_Zonda_Roadster_F.ogg', 'recording')} by Edvvc, ${link('https://creativecommons.org/licenses/by-sa/3.0/', 'CC BY-SA 3.0')}. The looped versions are shared under the same licences. All the other sounds are made in code.</p>
         <p class="small">Racing here is pretend. On real roads: seat belts on, and leave the racing to the racing drivers.</p>`;

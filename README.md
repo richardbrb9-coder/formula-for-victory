@@ -4,8 +4,8 @@ A Grand Prix racing game for ages 9 to 12: single-seater racing cars on real cir
 Supercar Legends. Plain JavaScript and three.js, installable (a PWA), and it works with no internet: nothing is loaded
 from other websites.
 
-**Phase 2 (this version):** the app, and three circuits fully playable: Monza, Silverstone and Monaco. Suzuka and
-Las Vegas are listed as "coming soon".
+**Phase 3 (this version):** the app, and all five circuits fully playable: Monza, Silverstone, Monaco, Suzuka (a
+figure of eight: the track crosses over itself on a bridge) and Las Vegas (a street circuit, always raced at night).
 
 ## How it fits together
 
@@ -20,7 +20,9 @@ Las Vegas are listed as "coming soon".
 | `circuits/monza-scenery.js` | Monza's surroundings: park trees, pits and podium, grandstands, the old banking, boards |
 | `circuits/silverstone*.js` | Silverstone: the same three files. An old airfield: runways, the Wing, big run-offs, grass banks, hedges |
 | `circuits/monaco*.js` | Monaco: the same three files. A hilly street circuit: the town, the casino, the tunnel, the harbour |
-| `circuits/common.js` | Scenery parts Silverstone and Monaco share: grandstand lists, boards, a pit lane ribbon, the podium stand |
+| `circuits/suzuka*.js` | Suzuka: the same three files. A figure of eight in wooded hills: the bridge, gravel traps, the amusement park and its big wheel |
+| `circuits/lasvegas*.js` | Las Vegas: the same three files. A night street circuit: floodlights, glowing towers and made-up neon signs, the giant globe |
+| `circuits/common.js` | Scenery parts the newer circuits share: grandstand lists, boards, a pit lane ribbon, the podium stand |
 | `backdrop.js` | The far distance: each circuit's photographed sky, painted horizon, haze, light and colour grade |
 | `tools/bake_sky.py` | Turns a Poly Haven sky photo (.hdr) into the two small pictures the game uses |
 | `formula.js`, `carmodel.js`, `cockpit.js`, `suspension.js`, `damage.js`, `effects.js`, `post.js`, `reflections.js`, `soundfx.js`, `weather.js`, `scenery.js`, `trackdetail.js`, `standdata.js` | Carried over from Supercar Legends (some trimmed) |
@@ -61,9 +63,33 @@ Las Vegas are listed as "coming soon".
   are drawn at their own brightness, and a sheet of white light covers each mouth from the inside.
 - Where the wall is closer than a kerb's width to the road, no kerb is drawn or felt.
 
+## A track that crosses over itself (Suzuka)
+
+- `crossover` in the circuit's data says which part of the lap is the bridge's deck (`over`), which part passes beneath
+  it (`under`) and the headroom (`clear`). The heights of both roads are in `elevation`, like any hill.
+- Nothing finds a car's place on the lap by looking for "the nearest bit of road": that would jump between the two
+  levels where they cross. Your car searches only near where it was a moment ago; rivals keep their own distance round
+  the lap; replays remember each car's place on the tape; cars only bump or slipstream each other when they are at the
+  same height.
+- The camera is kept below the deck while you pass under it; trackside TV cameras are not put on or under the bridge;
+  the little map and the menu outlines draw the bridge on top of the road beneath.
+- The scenery's ground must follow both roads. Suzuka's is level with each road beside it, and where two roads are
+  close the lower one wins, so it runs in a cutting and the upper one crosses it between concrete walls.
+
+## A night circuit (Las Vegas)
+
+- `time: 'night'` in the circuit's data makes it a night race, always (the set-up screen shows Day and Sunset greyed
+  out). Its `backdrop.looks` are then `night`, `cloudy`, `rain` and `snow`: the same floodlit street under each sky.
+- No extra lights are used. The two lights every circuit has become a soft white glow from above; the pools of light
+  under the floodlights are one see-through layer over the road; buildings are dark with glowing windows (one picture
+  for the walls, one for the light they give out); signs and lamps simply glow, and the film effects add the bloom.
+- The horizon's `skyline` layer paints a city of lit towers; `haze` is the glow where the sky meets the city.
+- Every name on every sign is made up (`SIGNS` in `lasvegas-scenery.js`). Never add a real hotel's or company's name.
+
 ## Rules for this game
 
-- Made-up teams, drivers and sponsors only. No real series, team or sponsor names or logos. Real place names are fine.
+- Made-up teams, drivers and sponsors only. No real series, team, sponsor, hotel or company names or logos. Real place
+  names are fine. A real corner that is named after a sponsor gets a plain name here instead (see `suzuka.js`).
 - Crash damage changes how a car looks, never how it drives. Weather never changes grip.
 - Everything saved on the device starts with `ffv_` (the owner's other apps share the same web address).
 - `sw.js`: bump `CACHE_NAME` on every change; it only ever deletes caches starting `formula-for-victory-`.
@@ -75,4 +101,4 @@ Las Vegas are listed as "coming soon".
 
 Circuit maps © OpenStreetMap contributors (ODbL). three.js (MIT). Fonts under the SIL Open Font Licence. Textures, skies
 and tree models from Poly Haven (CC0). Skies: Kloofendal 43d Clear, Farm Field, Qwantani Late Afternoon and Kloofendal
-Overcast (all Pure Sky versions) by Greg Zaal, Jarod Guest and Dimitrios Savva. Engine recordings from Wikimedia Commons (see the Credits screen for each one).
+Overcast (all Pure Sky versions) by Greg Zaal, Jarod Guest and Dimitrios Savva (Suzuka shares Farm Field; Las Vegas uses the older night sky). Engine recordings from Wikimedia Commons (see the Credits screen for each one).

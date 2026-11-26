@@ -9,7 +9,8 @@ export const CIRCUITS = [
       load: () => import('./monaco.js').then(m => m.MONACO) },
     { id: 'suzuka', name: 'Suzuka', country: 'Japan', flag: '🇯🇵', km: 5.807, blurb: 'A figure of eight in the wooded hills: the snaking S Curves, the Hairpin, Spoon, and a bridge where the track crosses over itself.',
       load: () => import('./suzuka.js').then(m => m.SUZUKA) },
-    { id: 'lasvegas', name: 'Las Vegas', country: 'USA', flag: '🇺🇸', km: 6.201, blurb: 'A night race down a famous street of lights.', soon: true }
+    { id: 'lasvegas', name: 'Las Vegas', country: 'USA', flag: '🇺🇸', km: 6.201, blurb: 'A night race through a city of lights: walls at the edge of the road, a giant glowing globe, and flat out down the famous Strip.',
+      load: () => import('./lasvegas.js').then(m => m.LASVEGAS) }
 ];
 // a small picture of a circuit's shape for the menus (only for circuits that are ready)
 export const OUTLINES = {};
