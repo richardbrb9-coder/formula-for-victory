@@ -568,7 +568,7 @@ function updateCars(dt) {
             // car just at the edge doesn't keep swapping)
             const dx = r.x - camera.position.x, dz = r.z - camera.position.z, d2 = dx * dx + dz * dz, e = detailOrder.find(o => o.r === r);
             if (!(race && race.podium)) r.holder.visible = d2 < 420 * 420;
-            showDetail(r, !!(e && e.full) || !!(race && (race.podium && !race.replay || race.grid && race.grid.warm)));   // (and all of them for the flyover's very first frames: see startGridCam)
+            showDetail(r, !!(e && e.full) || !!(race && (race.podium && !race.replay || race.grid && race.grid.warm > 0)));   // (and all of them for the flyover's very first frames: see startGridCam)
         }
         r.wheelSpin += r.v * dt / r.design.wheel;
         for (const w of r.model.wheels) {
@@ -1135,7 +1135,7 @@ function stopEngine() {
 // =====================================================================
 //  THE GRID FLYOVER (races only: a short aerial shot of the whole field, just before the lights)
 // =====================================================================
-// The camera starts high up ahead of pole, looking back at the grid; dives under the lights gantry; glides down the line
+// The camera starts high up ahead of pole, looking back at the grid; sweeps low over the lights gantry; glides down the line
 // of cars; swings round your own car and settles exactly where your race camera sits. Only then do the lights start.
 // Nothing drives while it plays (the race clock, the lights and the tape haven't begun), and a tap or a key skips it.
 // The path is laid out along the road itself (metres along it, metres across, metres up), so it bends with the track
@@ -1164,8 +1164,10 @@ function startGridCam() {
         t: 0, saveCam: camMode, hold: null,
         warm: 2,   // for its first two frames (still part of the pause while the circuit appears) every car is drawn in full, so none of them causes a stutter later, when the camera first comes close
         // [seconds, metres along the road (0 = the start line), metres across it, metres above it]
-        cam: [[0, pole + 48, 0, 14.5], [L * 0.25, 0, 0, 4.4], [L * 0.53, pd + reach, side * 1.3, 4.1], [L * 0.69, pd + 2, side * 3.3, 3.5], [L * 0.87, pd - 5.5, pl + side * 5, 3.6], [L, pd - 8.2, pl, 3.1]],
-        look: [[0, mid + 8, 0, 0.6], [L * 0.25, Math.min(mid, pd + reach + 6), 0, 0.6], [L * 0.53, pd + 3, pl * 0.5, 0.7], [L * 0.69, pd - 0.3, pl, 0.7], [L * 0.87, pd + 1.6, pl, 0.65], [L, pd + 7, pl, 0.8]]
+        // (it skims over the gantry's beam, whose top is 7.7 m up: passing under it, the dark beam filled the top of the picture)
+        cam: [[0, pole + 48, 0, 14.5], [L * 0.25, 0, 0, 9.5], [L * 0.5, pd + reach, side * 1.3, 4.1], [L * 0.65, pd + 2, side * 3.3, 3.5], [L * 0.85, pd - 5.5, pl + side * 5, 3.6], [L, pd - 8.2, pl, 3.1]],
+        // (the swing round your car starts a little sooner and looks a little ahead of it, so it turns at most about 90 degrees a second)
+        look: [[0, mid + 8, 0, 0.6], [L * 0.25, Math.min(mid, pd + reach + 6), 0, 0.6], [L * 0.5, pd + 3, pl * 0.5, 0.7], [L * 0.65, pd + 0.8, pl, 0.7], [L * 0.85, pd + 1.6, pl, 0.65], [L, pd + 7, pl, 0.8]]
     };
     camMode = 0; applyCameraView();                                    // (seen from outside until it settles, whatever view you chose)
     world.lightMats.forEach(m => { m.emissiveIntensity = 0; });
@@ -1214,14 +1216,14 @@ function endGridCam(leaving = false) {
 // first time it is drawn. Left alone, that moment comes whenever the camera first turns to face something new, as a
 // stutter in the middle of the sweep. So during the high opening shot they are made ready, one or two a frame.
 const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap', 'aoMap'];
-function readyPictures(G) {
+function readyPictures(G, budget = 3) {
     if (G.t > GRID_CAM_TIME * 0.4) return;
     if (!G.pics || G.picsAt < G.t - 0.5) {   // (looked for again every half second: some arrive late)
         G.done = G.done || new Set(); G.pics = []; G.picsAt = G.t;
         scene.traverse(o => { for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) for (const k of TEX_SLOTS) { const t = m[k]; if (t && t.isTexture && !t.isRenderTargetTexture && !t.isCubeTexture && !G.done.has(t)) G.pics.push(t); } });
     }
     const t0 = performance.now();
-    for (let i = G.pics.length - 1; i >= 0 && performance.now() - t0 < 3; i--) {
+    for (let i = G.pics.length - 1; i >= 0 && performance.now() - t0 < budget; i--) {
         const t = G.pics[i], im = t.image;
         if (!im || !(im.width > 0) || im.complete === false) continue;   // (not arrived yet)
         G.pics.splice(i, 1); G.done.add(t);
@@ -1231,7 +1233,9 @@ function readyPictures(G) {
 function skipGridCam() { if (race && race.grid && !race.paused && race.grid.t > GRID_CAM_GRACE) endGridCam(); }
 function gridFrame(dt) {
     const G = race.grid, t0 = performance.now();
-    if (G.hold == null) G.t += Math.max(0, dt);   // (the very first frame after building the circuit can report a time step below zero)
+    // (the clock stands still through the warm-up frames and the one after, whose time step is the long warm-up itself,
+    // so the slow first frames show one still picture instead of a jerk; and the very first time step can be below zero)
+    if (G.hold == null && G.warm < 0) G.t += Math.max(0, dt);
     updateCars(dt);
     if (G.t >= GRID_CAM_TIME) endGridCam(); else placeGridCam(dt);
     updateEngine();
@@ -1239,7 +1243,9 @@ function gridFrame(dt) {
     world.update(dt); updateEffects(dt);
     hud(); drawMap();
     drawFrame();
-    if (G.warm) G.warm--; else readyPictures(G);
+    // (while the picture is still held, the pictures that have arrived are all made ready at once: one big one alone can take
+    // 50 ms on a slow tablet, which would show as a jerk once the camera moves; after that, a few milliseconds a frame)
+    if (G.warm >= 0) { G.warm--; readyPictures(G, 300); } else readyPictures(G);
     if (window.__bench) window.__bench.work.push(performance.now() - t0);
 }
 
