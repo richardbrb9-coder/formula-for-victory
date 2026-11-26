@@ -183,7 +183,11 @@ const input = { left: false, right: false, gas: false, brake: false, tilt: 0 };
 // camera views: 0 chase, 1 close chase, 2 bonnet, 3 cockpit (from the driver's seat)
 const CAM_NAMES = ['Chase camera', 'Close chase camera', 'Bonnet camera', 'Cockpit view'];
 let camMode = [0, 1, 2, 3].includes(store('raceCam', 0)) ? store('raceCam', 0) : 0, help = store('raceHelp', true);
-function nextCamera() { if (race && (race.replay || race.podium)) return; camMode = (camMode + 1) % 4; storeSet('raceCam', camMode); applyCameraView(); flash(CAM_NAMES[camMode], 1100); }
+function nextCamera() {
+    if (race && (race.replay || race.podium)) return;
+    if (race && race.grid) { const m = (race.grid.saveCam + 1) % 4; race.grid.saveCam = m; storeSet('raceCam', m); endGridCam(); flash(CAM_NAMES[m], 1100); return; }   // (during the grid flyover: straight to the new view)
+    camMode = (camMode + 1) % 4; storeSet('raceCam', camMode); applyCameraView(); flash(CAM_NAMES[camMode], 1100);
+}
 // show the cockpit (and hide the car's own cabin shell) only in the cockpit view
 function applyCameraView() {
     if (!player) return;
@@ -286,7 +290,7 @@ function storeSet(key, v) { try { localStorage.setItem('ffv_' + key, JSON.string
 
 function setupRace() {
     // remove old cars
-    leavePodium();
+    leavePodium(); endGridCam(true);
     if (ghost) ghost.model.group.traverse(o => { if (o.isMesh && o.material && o.material.userData.ghostCopy) o.material.dispose(); });   // (the see-through copies)
     [player, ...rivals, ghost].forEach(r => { if (r) { scene.remove(r.holder); dmg.unfit(r); r.model.dispose(); dropBlob(r.blob); if (r.far) { r.far.geometry.dispose(); r.far.material.dispose(); } if (r.cockpit) { if (r.cockpit.group.parent) r.cockpit.group.parent.remove(r.cockpit.group); r.cockpit.dispose(); } } });
     rivals = []; ghost = null; pixelCache.clear(); mapColours.clear();   // (each race's cars have their own pictures)
@@ -305,12 +309,13 @@ function setupRace() {
     if (mode === 'race') {
         // the rivals spread from quickest (at the front) to slowest, and you start at the back
         const others = TEAMS.map((_, i) => i).filter(i => i !== playerTeam).sort(() => Math.random() - 0.5);
+        const mine = Number.isInteger(window.__gridSlot) ? Math.max(0, Math.min(fieldSize, window.__gridSlot)) : fieldSize, free = slots.filter((_, k) => k !== mine);   // (testing only: start from another grid box)
         for (let i = 0; i < fieldSize; i++) {
             const r = makeRacer(teamDesign(others[i]), DIFF[difficulty] * (1 - i * 0.06 / fieldSize), false);
             r.lineOffset = ((i % 3) - 1) * 1.6;
-            rivals.push(r); scene.add(r.holder); place(r, slots[i]);
+            rivals.push(r); scene.add(r.holder); place(r, free[i]);
         }
-        place(player, slots[fieldSize]);
+        place(player, slots[mine]);
     } else {
         place(player, [-12, 0]);
         const g = store('ghost_' + TRACK.id, null);
@@ -328,6 +333,7 @@ function setupRace() {
     try { for (const o of dmg.warmUp(player)) { const was = o.visible; o.visible = true; renderer.compile(o, camera, scene); o.visible = was; } } catch (e) { /* made ready at the first bump instead */ }
     race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], hits: [] };
     updateCars(0); placeCamera(true);
+    startGridCam();
     hud();
 }
 
@@ -562,7 +568,7 @@ function updateCars(dt) {
             // car just at the edge doesn't keep swapping)
             const dx = r.x - camera.position.x, dz = r.z - camera.position.z, d2 = dx * dx + dz * dz, e = detailOrder.find(o => o.r === r);
             if (!(race && race.podium)) r.holder.visible = d2 < 420 * 420;
-            showDetail(r, !!(e && e.full) || !!(race && race.podium && !race.replay));
+            showDetail(r, !!(e && e.full) || !!(race && (race.podium && !race.replay || race.grid && race.grid.warm)));   // (and all of them for the flyover's very first frames: see startGridCam)
         }
         r.wheelSpin += r.v * dt / r.design.wheel;
         for (const w of r.model.wheels) {
@@ -1127,6 +1133,117 @@ function stopEngine() {
 }
 
 // =====================================================================
+//  THE GRID FLYOVER (races only: a short aerial shot of the whole field, just before the lights)
+// =====================================================================
+// The camera starts high up ahead of pole, looking back at the grid; dives under the lights gantry; glides down the line
+// of cars; swings round your own car and settles exactly where your race camera sits. Only then do the lights start.
+// Nothing drives while it plays (the race clock, the lights and the tape haven't begun), and a tap or a key skips it.
+// The path is laid out along the road itself (metres along it, metres across, metres up), so it bends with the track
+// and stays between the walls on every circuit, wherever your car is on the grid.
+const GRID_CAM_TIME = 6, GRID_CAM_GRACE = 0.35;    // seconds: the whole shot; how long before a tap can skip it (so the tap that started the race doesn't)
+const gcA = new THREE.Vector3(), gcB = new THREE.Vector3(), gcEnd = new THREE.Vector3(), gcEndLook = new THREE.Vector3();
+// a smooth curve through timed points [t, a, b, c] (it passes through every point, and comes gently to rest at the last)
+function gridCurve(keys, t, out) {
+    let i = 0; while (i < keys.length - 2 && t > keys[i + 1][0]) i++;
+    const k0 = keys[i], k1 = keys[i + 1], span = k1[0] - k0[0], u = Math.max(0, Math.min(1, (t - k0[0]) / span)), u2 = u * u, u3 = u2 * u;
+    for (let c = 1; c <= 3; c++) {
+        const slope = j => j === keys.length - 1 ? 0 : j === 0 ? (keys[1][c] - keys[0][c]) / (keys[1][0] - keys[0][0]) : (keys[j + 1][c] - keys[j - 1][c]) / (keys[j + 1][0] - keys[j - 1][0]);
+        out[c - 1] = (2 * u3 - 3 * u2 + 1) * k0[c] + (u3 - 2 * u2 + u) * span * slope(i) + (-2 * u3 + 3 * u2) * k1[c] + (u3 - u2) * span * slope(i + 1);
+    }
+    return out;
+}
+function startGridCam() {
+    const calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (mode !== 'race' || calm || window.__noGridCam) return;    // (a time trial goes straight to the lights; so does a device set to reduce motion)
+    const pole = Math.max(...rivals.map(r => r.d), player.d), last = Math.min(...rivals.map(r => r.d), player.d), pd = player.d, pl = player.lat;
+    const side = pl > 0 ? -1 : 1, mid = (pole + last) / 2;             // the camera comes down the other column from yours
+    const reach = Math.min(16, Math.max(0, pole - pd) + 4);            // (from near the front of the grid there is less of it to glide down)
+    const L = GRID_CAM_TIME;
+    race.phase = 'grid';
+    race.grid = {
+        t: 0, saveCam: camMode, hold: null,
+        warm: 2,   // for its first two frames (still part of the pause while the circuit appears) every car is drawn in full, so none of them causes a stutter later, when the camera first comes close
+        // [seconds, metres along the road (0 = the start line), metres across it, metres above it]
+        cam: [[0, pole + 48, 0, 14.5], [L * 0.25, 0, 0, 4.4], [L * 0.53, pd + reach, side * 1.3, 4.1], [L * 0.69, pd + 2, side * 3.3, 3.5], [L * 0.87, pd - 5.5, pl + side * 5, 3.6], [L, pd - 8.2, pl, 3.1]],
+        look: [[0, mid + 8, 0, 0.6], [L * 0.25, Math.min(mid, pd + reach + 6), 0, 0.6], [L * 0.53, pd + 3, pl * 0.5, 0.7], [L * 0.69, pd - 0.3, pl, 0.7], [L * 0.87, pd + 1.6, pl, 0.65], [L, pd + 7, pl, 0.8]]
+    };
+    camMode = 0; applyCameraView();                                    // (seen from outside until it settles, whatever view you chose)
+    world.lightMats.forEach(m => { m.emissiveIntensity = 0; });
+    let hint = document.getElementById('race-skip'), veil = document.getElementById('race-veil');
+    if (!hint) { hint = document.createElement('div'); hint.id = 'race-skip'; hint.className = 'race-skip'; hint.textContent = 'Tap to skip'; document.getElementById('race-flash').after(hint); }
+    if (!veil) { veil = document.createElement('div'); veil.id = 'race-veil'; veil.className = 'race-veil'; document.getElementById('race-hud').before(veil); }
+    veil.style.transition = 'none'; veil.style.opacity = 0;
+    document.getElementById('race-stage').classList.add('grid-cam');
+    placeGridCam(0);
+}
+// a point on the road's own map (along, across, up) as a place in the world; never through a wall, a roof or the ground
+function gridPoint(v, out) {
+    const f = ((v[0] / trackLen * N) % N + N) % N, i = Math.floor(f) % N, k = f - Math.floor(f), s = samples[i], s2 = samples[(i + 1) % N];   // (smoothly between the road's 2 m points)
+    const lat = Math.max(-(s.wr + (s2.wr - s.wr) * k - 1.2), Math.min(s.wl + (s2.wl - s.wl) * k - 1.2, v[1])), p = pathAt(v[0], lat, 0);
+    let h = Math.max(0.7, v[2]); if (s.roofed || s2.roofed) h = Math.min(h, (TRACK.tunnelHeight || 5.6) - 0.9);
+    return out.set(p.x, p.y + h, p.z);
+}
+const gcV = [0, 0, 0];
+function placeGridCam(dt) {
+    const G = race.grid, t = Math.min(GRID_CAM_TIME, G.hold ?? G.t), r = player;
+    // where your race camera will sit (the bonnet and cockpit views are reached from the close chase view, through a quick fade)
+    const fx = Math.cos(r.heading), fz = -Math.sin(r.heading), [back, up, ahead] = G.saveCam === 0 ? [8.2, 3.1, 7] : [5.4, 1.9, 8];
+    camPos.set(r.x - fx * back, r.y + up, r.z - fz * back); keepCameraInside(); gcEnd.copy(camPos);
+    gcEndLook.set(r.x + fx * ahead, r.y + 0.8, r.z + fz * ahead);
+    gridPoint(gridCurve(G.cam, t, gcV), gcA); gridPoint(gridCurve(G.look, t, gcV), gcB);
+    // over the last part the path melts into that exact spot, so there is no jump when the race camera takes over
+    let w = Math.max(0, Math.min(1, (t / GRID_CAM_TIME - 0.68) / 0.32)); w = w * w * w * (w * (w * 6 - 15) + 10);
+    camPos.copy(gcA).lerp(gcEnd, w); camLook.copy(gcB).lerp(gcEndLook, w);
+    camera.position.copy(camPos); camera.lookAt(camLook);
+    const open = Math.min(1, t / (GRID_CAM_TIME * 0.5)); camera.fov = 50 + 10 * w + 6 * (1 - open) * (1 - open); camera.updateProjectionMatrix();   // a wide view of the whole grid at first
+    const inside = G.saveCam >= 2, veil = document.getElementById('race-veil');
+    if (veil) veil.style.opacity = inside ? Math.max(0, Math.min(1, (t - (GRID_CAM_TIME - 0.3)) / 0.26)).toFixed(2) : 0;
+}
+// the flyover is over (or was skipped): your own camera takes over and the lights begin, exactly as they always have
+function endGridCam(leaving = false) {
+    if (!race || !race.grid) return;
+    const G = race.grid; race.grid = null; camMode = G.saveCam;
+    document.getElementById('race-stage').classList.remove('grid-cam');
+    const veil = document.getElementById('race-veil');
+    if (veil) { veil.style.transition = leaving || +veil.style.opacity === 0 ? 'none' : 'opacity .4s'; void veil.offsetWidth; veil.style.opacity = 0; }
+    if (leaving) return;
+    race.phase = 'lights'; race.t = 0;
+    applyCameraView(); placeCamera(true);
+}
+// The circuit's pictures (textures) are still arriving while the flight begins, and each one costs a moment's work the
+// first time it is drawn. Left alone, that moment comes whenever the camera first turns to face something new, as a
+// stutter in the middle of the sweep. So during the high opening shot they are made ready, one or two a frame.
+const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap', 'aoMap'];
+function readyPictures(G) {
+    if (G.t > GRID_CAM_TIME * 0.4) return;
+    if (!G.pics || G.picsAt < G.t - 0.5) {   // (looked for again every half second: some arrive late)
+        G.done = G.done || new Set(); G.pics = []; G.picsAt = G.t;
+        scene.traverse(o => { for (const m of o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []) for (const k of TEX_SLOTS) { const t = m[k]; if (t && t.isTexture && !t.isRenderTargetTexture && !t.isCubeTexture && !G.done.has(t)) G.pics.push(t); } });
+    }
+    const t0 = performance.now();
+    for (let i = G.pics.length - 1; i >= 0 && performance.now() - t0 < 3; i--) {
+        const t = G.pics[i], im = t.image;
+        if (!im || !(im.width > 0) || im.complete === false) continue;   // (not arrived yet)
+        G.pics.splice(i, 1); G.done.add(t);
+        try { renderer.initTexture(t); } catch (e) { /* made ready when it is first drawn instead */ }
+    }
+}
+function skipGridCam() { if (race && race.grid && !race.paused && race.grid.t > GRID_CAM_GRACE) endGridCam(); }
+function gridFrame(dt) {
+    const G = race.grid, t0 = performance.now();
+    if (G.hold == null) G.t += Math.max(0, dt);   // (the very first frame after building the circuit can report a time step below zero)
+    updateCars(dt);
+    if (G.t >= GRID_CAM_TIME) endGridCam(); else placeGridCam(dt);
+    updateEngine();
+    followSun(camLook.x, camLook.z, player.y);          // (the shadows follow what the camera is looking at, not your car at the back)
+    world.update(dt); updateEffects(dt);
+    hud(); drawMap();
+    drawFrame();
+    if (G.warm) G.warm--; else readyPictures(G);
+    if (window.__bench) window.__bench.work.push(performance.now() - t0);
+}
+
+// =====================================================================
 //  MAIN LOOP
 // =====================================================================
 // smoke when sliding, dust on the grass, speed lines, headlights
@@ -1183,6 +1300,7 @@ function frame(now) {
     if (!race || race.paused) { if (sky) sky.position.copy(camera.position); drawFrame(); return; }
     if (race.replay) { replayFrame(dt); return; }
     if (race.podium) { podiumFrame(dt); return; }
+    if (race.phase === 'grid') { gridFrame(dt); return; }   // (the flyover: nothing drives, and no clock runs, until it is over)
     race.t += dt;
     if (race.podiumAt != null && race.t >= race.podiumAt) { startPodium(); podiumFrame(dt); return; }
     if (race.phase === 'lights') {
@@ -1236,8 +1354,10 @@ function bindControls() {
         btn.addEventListener('contextmenu', e => e.preventDefault());
     });
     const keys = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', Space: 'brake' };
-    window.addEventListener('keydown', e => { if (!isRacing()) return; if (keys[e.code]) { input[keys[e.code]] = true; e.preventDefault(); getAudioStart(); } if (e.code === 'KeyC') nextCamera(); if (e.code === 'Escape') togglePause(true); });
+    window.addEventListener('keydown', e => { if (!isRacing()) return; if (race && race.grid && !e.repeat && e.code !== 'Escape' && e.code !== 'KeyC') skipGridCam(); if (keys[e.code]) { input[keys[e.code]] = true; e.preventDefault(); getAudioStart(); } if (e.code === 'KeyC') nextCamera(); if (e.code === 'Escape') togglePause(true); });
     window.addEventListener('keyup', e => { if (keys[e.code]) input[keys[e.code]] = false; });
+    // a tap anywhere on the picture skips the grid flyover (the buttons along the top still do their own jobs)
+    document.getElementById('race-stage').addEventListener('pointerdown', e => { if (race && race.grid && !e.target.closest('.race-top, .race-panel')) skipGridCam(); });
     window.addEventListener('blur', () => { Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; }); });
 }
 function getAudioStart() { if (!engine && race && !race.paused && !race.replay && !race.podium) startEngine(); }   // (not while paused or watching a replay)
@@ -1276,7 +1396,7 @@ function showStage() {
 }
 // back to the menus (app.js shows them)
 function showMenu() {
-    stopEngine(); leavePodium(); race = null;
+    stopEngine(); leavePodium(); endGridCam(true); race = null;
     document.getElementById('race-stage').hidden = true;
     document.body.classList.remove('racing');
     if (raf) { cancelAnimationFrame(raf); raf = null; }
@@ -1454,7 +1574,7 @@ export function stop() { if (race) showMenu(); }
 // for testing: drive automatically along the racing line
 export function autopilot(on) { window.__autopilot = on; }
 export function suspDebug() { const s = player && player.susp; return s && { pitch: +s.pitch.toFixed(4), roll: +s.roll.toFixed(4), heave: +s.heave.toFixed(4), heat: +s.heat.toFixed(2), bumps: s.bumps.map(b => +b.toFixed(3)), parts: s.corners.length || (s.links ? s.links.length : 0) }; }
-export function debug() { return { mode, phase: race && race.phase, lap: player && player.lap, idx: player && player.idx, v: player && player.v, pos: player && positionOf(player), best: player && player.best, rivals: rivals.map(r => [r.lap, Math.round(r.v)]), rivalLat: rivals.map(r => [+r.lat.toFixed(2), +r.latV.toFixed(2)]), trackLen, N, trees: world && world.trees, ghost: !!(ghost && ghost.holder.visible), slip: player && player.slip, time: timeOfDay, quality, shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, grassPct: player ? Math.round(100 * (player.grassTime || 0) / (player.driveTime || 1)) : 0, wallHits: player && (player.wallHits || 0), slideTime: player && +(player.slideTime || 0).toFixed(1), raceTime: race && race.raceTime }; }
+export function debug() { return { mode, phase: race && race.phase, raceT: race && +race.t.toFixed(2), cam: camMode, lap: player && player.lap, idx: player && player.idx, v: player && player.v, pos: player && positionOf(player), best: player && player.best, rivals: rivals.map(r => [r.lap, Math.round(r.v)]), rivalLat: rivals.map(r => [+r.lat.toFixed(2), +r.latV.toFixed(2)]), trackLen, N, trees: world && world.trees, ghost: !!(ghost && ghost.holder.visible), slip: player && player.slip, time: timeOfDay, quality, shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, grassPct: player ? Math.round(100 * (player.grassTime || 0) / (player.driveTime || 1)) : 0, wallHits: player && (player.wallHits || 0), slideTime: player && +(player.slideTime || 0).toFixed(1), raceTime: race && race.raceTime }; }
 export function setHelp(on) { help = on; }
 // testing only: bump car k (0 = you, 1 = the first rival ...) on its 'front', 'rear', 'left' or 'right', as hard as sev (0 to 1)
 export function testHit(k = 0, where = 'front', sev = 0.8, colour = '#FFB300') {
@@ -1499,6 +1619,7 @@ function mapFrame() {
     const note = `Pink: OpenStreetMap outline (${TRACK.geo.mappedLength} m).  Game track: ${trackLen.toFixed(1)} m.  Real lap: ${TRACK.geo.realLength} m.`;
     x.strokeText(note, 14, H - 16); x.fillText(note, 14, H - 16);
 }
+export function testGridCam(t) { if (!race || !race.grid) return false; if (t == null && race.grid.hold != null) race.grid.t = race.grid.hold; race.grid.hold = t; return true; }   // testing only: hold the grid flyover at a moment (null lets it run on from there)
 export function sceneForTest() { return scene; }   // testing only
 export function testTime(t) { if (!SC.TIMES[t]) return false; timeOfDay = t; if (world && TRACK) setAtmosphere(TRACK.theme); return true; }   // testing only: 'day', 'sunset' or 'night'
 export function rivalsForTest() { return rivals.map(r => [Math.round(((r.d % trackLen) + trackLen) % trackLen), Math.round(r.v * 3.6), +r.y.toFixed(1)]); }   // testing only: where each rival is, its speed (km/h) and height
