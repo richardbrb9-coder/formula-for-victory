@@ -205,7 +205,9 @@ export function buildTrackMeshes(T, GRID) {
         const i1 = Math.min(N, i0 + CHUNK), mid = samples[Math.floor((i0 + i1) / 2) % N].p;
         // (a section's far-away details are switched off by how far the NEAREST part of it is, measured every 40 m)
         const along = []; for (let i = i0; i <= i1; i += 20) along.push(samples[i % N].p);
-        const add = (mesh, far) => { if (!mesh) return; group.add(mesh); if (far) lod.push({ o: mesh, c: mid, pts: along, far }); return mesh; };
+        // (C.roadFar: on a circuit that folds back on itself, where far-off sections are often in view but lost in the haze,
+        // even the road and its run-off are not drawn from further away than this; other circuits always draw them)
+        const add = (mesh, far = C.roadFar || 0) => { if (!mesh) return; group.add(mesh); if (far) lod.push({ o: mesh, c: mid, pts: along, far }); return mesh; };
         // the road, with a white line along each edge
         const road = new Geo();
         sweep(T, road, i0, i1, 1, s => [[s.hw, 0.02], [-s.hw, 0.02]], (q, d, off) => [off / 6, d / 6]);

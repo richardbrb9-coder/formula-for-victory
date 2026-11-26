@@ -26,6 +26,7 @@ export const SUZUKA = {
     // the road from Degner to the Hairpin goes under ('under'; 'clear': the headroom beneath the bridge, in metres)
     crossover: { over: [4740, 4778], under: [2362, 2398], clear: 5.4 },
     heliHeight: 30,
+    roadFar: 1100,              // (a section of road more than 1100 m away is deep in the haze: it is not drawn. See track.js)
     // between the road and the wall: grass 9 m wide with a steel barrier, unless a zone below says otherwise
     runoff: { w: 9, surface: 'grass', barrier: 'steel' },
     zones: [

@@ -11,7 +11,7 @@
 import * as THREE from '../lib/three.module.min.js';
 import * as SC from '../scenery.js';
 import { Geo, sweep } from '../track.js';
-import { Quads, smooth, wrapD, inZone, buildStands, onStand, boards, ribbon, podiumStand } from './common.js';
+import { Quads, smooth, wrapD, inZone, buildStands, onStand, boards, ribbon, podiumStand, shareMaterials } from './common.js';
 
 const PAVE = 4;                                                         // how wide the pavement behind the wall is
 // grandstands: [metres round the lap, side (1 left, -1 right), length, rows, gap behind the wall]
@@ -147,7 +147,7 @@ export function lasVegasScenery(ctx) {
         for (let i = 0; i < lane.length; i += 2) mark(footprint(lane[i], lane[i + 1], 0, 12, 12));
         const blocks = [];
         for (const d of PITS.groups) { const b = SC.pitBuilding(PITS.sections); SC.placeBeside(ctx, b, d, PITS.front); b.userData.far = 950; b.userData.noProbe = true; blocks.push(b); const p = spot(d, 1, PITS.front + 7); mark(footprint(p.x, p.z, p.heading, 54, 20, 3)); }
-        group.add(SC.mergeStatic(blocks));
+        shareMaterials(blocks); group.add(SC.mergeStatic(blocks));   // (the five blocks are then drawn as one building)
         { const d = PITS.groups[0] - 25.6, s = at(d), c = T.pathAt(d, PITS.front + 7.2, 0); signBoard(c.x, c.z, Math.atan2(-s.n.z, s.n.x), 13, 13 / 4.1, 4.4, 14); }   // (on its blank end wall, facing the cars as they arrive)
         const pod = podiumStand('LAS VEGAS', ['#B22234', '#f4f4f0', '#3C3B6E']);
         SC.placeBeside(ctx, pod, -9, PITS.front); group.add(SC.mergeStatic([pod]));

@@ -7,7 +7,7 @@
 import * as THREE from '../lib/three.module.min.js';
 import * as SC from '../scenery.js';
 import { Geo, sweep } from '../track.js';
-import { Quads, smooth, wrapD, inZone, buildStands, onStand, boards, ribbon, podiumStand } from './common.js';
+import { Quads, smooth, wrapD, inZone, buildStands, onStand, boards, ribbon, podiumStand, shareMaterials } from './common.js';
 
 // grandstands: [metres round the lap, side (1 left, -1 right), length, rows, gap behind the wall]
 const STANDS = [
@@ -129,7 +129,7 @@ export function suzukaScenery(ctx) {
         for (let i0 = 0; i0 < N; i0 += 500) {   // (in six long pieces: fewer separate things for a tablet to draw)
             const g = new Geo(), i1 = Math.min(N, i0 + 500);
             for (const side of [1, -1]) sweep(T, g, i0, i1, 2, (s, i) => prof(s, i, side), (q, d, off) => [off / 6, d / 6]);
-            const m = g.mesh(vergeMat); if (m) { m.receiveShadow = true; m.userData.always = true; group.add(m); }
+            const m = g.mesh(vergeMat); if (m) { m.receiveShadow = true; m.userData.always = true; m.userData.noProbe = true; group.add(m); }   // (left out of the cars' reflections: the land just beneath it is the same green)
         }
     }
 
@@ -195,11 +195,11 @@ export function suzukaScenery(ctx) {
         // the pit building, in blocks that step down the hill with the road
         const blocks = [];
         for (const d of PITS.groups) { const b = SC.pitBuilding(PITS.sections); SC.placeBeside(ctx, b, d, -PITS.front); b.position.y -= 0.05; b.userData.far = 950; b.userData.noProbe = true; blocks.push(b); }
-        group.add(SC.mergeStatic(blocks));
+        shareMaterials(blocks); group.add(SC.mergeStatic(blocks));   // (the four blocks are then drawn as one building)
         const pod = podiumStand('SUZUKA', ['#f4f4f0', '#BC002D', '#f4f4f0']);
         SC.placeBeside(ctx, pod, -9, -PITS.front); group.add(SC.mergeStatic([pod]));
     }
-    buildStands(ctx, STANDS, 0xA3142A, 1100);
+    buildStands(ctx, STANDS, 0xA3142A, 1100, 700);   // (baked together in bigger groups than usual: this circuit folds back on itself, so many stands are in view at once)
 
     // =================================================================
     //  THE AMUSEMENT PARK: a big wheel that turns, a roller coaster, a carousel, a drop tower, tents and stalls
@@ -290,7 +290,10 @@ export function suzukaScenery(ctx) {
         // a row of low bushes here and there behind the barriers
         for (let d = 0; d < L; d += 7) { const s = at(d); if (Math.random() > 0.2 * dens) continue; for (const side of [1, -1]) { const p = T.pathAt(d, side * (wallOf(s, side) + R(8, 13)), 0); if (free(p.x, p.z, 7)) bushes.push({ x: p.x, z: p.z, y: land(p.x, p.z) - 0.05, size: R(0.8, 1.2), shadow: false }); } }
         SC.plantTrees(ctx, trees, [['round', 0.55], ['slim', 0.37], ['bush_a', 0.08]]);
+        const before = group.children.length;
         SC.plantTrees(ctx, bushes, SC.TREE_MIX.hedge, false);
+        for (let i = before; i < group.children.length; i++) group.children[i].userData.noProbe = true;        // (the bushes and the trees' shadows are left out of the cars' reflections)
+        for (const o of group.children) if (o.userData.treeShadows) o.userData.noProbe = true;
         ctx.treeCount = trees.length + bushes.length;
     }
     return { update(dt) { if (wheel) wheel.rotation.z += dt * 0.09; } };

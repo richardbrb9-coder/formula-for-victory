@@ -94,7 +94,8 @@ figure of eight: the track crosses over itself on a bridge) and Las Vegas (a str
 - Everything saved on the device starts with `ffv_` (the owner's other apps share the same web address).
 - `sw.js`: bump `CACHE_NAME` on every change; it only ever deletes caches starting `formula-for-victory-`.
 - Keep the number of separate things drawn low (tablets): build scenery, then bake it with `SC.mergeStatic` (one mesh per
-  material), share materials between copies, and plant all of a circuit's trees in one `SC.plantTrees` call. Rivals are drawn
+  material), share materials between copies (`shareMaterials` in `circuits/common.js` does it for buildings made one at a time, like
+  a pit building in several blocks), and plant all of a circuit's trees in one `SC.plantTrees` call. Rivals are drawn
   in full only when they are among the nearest few; each car's shadow comes from one simple shape on layer 1.
 
 ## Credits

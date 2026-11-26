@@ -41,8 +41,8 @@ export class Quads {
 }
 
 // Grandstands from a list [metres round the lap, side (1 left, -1 right), length, rows, gap behind the wall, roof colour].
-// Neighbouring stands are baked together and drawn as one.
-export function buildStands(ctx, STANDS, roof = 0x1E3A8A, far = 950) {
+// Neighbouring stands (within 'reach' metres round the lap of each other) are baked together and drawn as one.
+export function buildStands(ctx, STANDS, roof = 0x1E3A8A, far = 950, reach = 420) {
     const { T, group } = ctx, L = T.trackLen, stands = [];
     for (const [d, side, len, rows, gap, colour] of STANDS) {
         const s = T.sampleAt(d);
@@ -62,9 +62,19 @@ export function buildStands(ctx, STANDS, roof = 0x1E3A8A, far = 950) {
     }
     while (stands.length) {
         const first = stands.shift(), near = [first.st];
-        for (let i = stands.length - 1; i >= 0; i--) if (Math.abs(wrapD(stands[i].d - first.d, L)) < 420) near.push(stands.splice(i, 1)[0].st);
+        for (let i = stands.length - 1; i >= 0; i--) if (Math.abs(wrapD(stands[i].d - first.d, L)) < reach) near.push(stands.splice(i, 1)[0].st);
         group.add(SC.mergeStatic(near));
     }
+}
+// Several copies of the same building (pit buildings in a row, each made with its own materials) are given one shared
+// set of materials, so that SC.mergeStatic can then draw them all together instead of copy by copy.
+export function shareMaterials(objs) {
+    const seen = new Map();
+    for (const root of objs) root.traverse(o => {
+        const m = o.material; if (!o.isMesh || !m || Array.isArray(m)) return;
+        const key = [m.type, m.color ? m.color.getHex() : '', m.roughness, m.metalness, m.emissive ? m.emissive.getHex() : '', m.emissiveIntensity, !!m.vertexColors, !!m.transparent, m.opacity, m.side, m.map ? m.map.uuid : '', !!m.userData.snowRoof].join('|');
+        if (!seen.has(key)) seen.set(key, m); else if (seen.get(key) !== m) { o.material = seen.get(key); m.dispose(); }
+    });
 }
 // is this spot (which side of the track, how far round, how far beyond the wall) taken up by a grandstand?
 export const onStand = (STANDS, L, d, side, clear) => STANDS.some(([sd, ss, len, rows, gap]) => side === ss && Math.abs(wrapD(d - sd, L)) < len / 2 + 8 && clear < gap + rows * 0.9 + 9);
