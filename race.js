@@ -330,7 +330,7 @@ function setupRace() {
         if (g && g.frames && g.frames.length) {
             ghost = makeRacer(teamDesign(playerTeam), 1, false);
             ghost.frames = g.frames; ghost.time = g.time;
-            ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o.material) { o.material = o.material.clone(); o.material.userData.ghostCopy = true; o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
+            ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o === ghost.glow) return; if (o.material) { o.material = o.material.clone(); o.material.userData.ghostCopy = true; o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
             ghost.holder.visible = false; ghost.shadowCaster.visible = false; scene.add(ghost.holder);
         }
     }
@@ -643,7 +643,7 @@ function setupGhostFromStore() {
     const g = store('ghost_' + TRACK.id, null); if (!g) return;
     if (!ghost) {
         ghost = makeRacer(teamDesign(playerTeam), 1, false);
-        ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o.material) { o.material = o.material.clone(); o.material.userData.ghostCopy = true; o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
+        ghost.model.group.traverse(o => { if (o.material === ghost.model.mats.spinBlur) { o.visible = false; return; } if (o === ghost.glow) return; if (o.material) { o.material = o.material.clone(); o.material.userData.ghostCopy = true; o.material.transparent = true; o.material.opacity = 0.35; o.material.depthWrite = false; } });
         ghost.shadowCaster.visible = false; scene.add(ghost.holder);
     }
     ghost.frames = g.frames; ghost.time = g.time; ghost.lapT0 = race.raceTime;
@@ -1354,7 +1354,7 @@ function watchFrameRate(dt) {
 function frame(now) {
     raf = requestAnimationFrame(frame);
     renderer.info.reset();   // (counted over the whole frame: shadows, reflections and the picture itself)
-    const dt = Math.min(0.05, (now - lastT) / 1000 || 0) * (window.__timeScale || 1), t0 = performance.now();   // (__timeScale: testing only, a test lap in less time; the driving still runs in the same small steps) if (window.__bench) window.__bench.gap.push(now - lastT);
+    const dt = Math.min(0.05, (now - lastT) / 1000 || 0) * (window.__timeScale || 1), t0 = performance.now(); if (window.__bench) window.__bench.gap.push(now - lastT);   // (__timeScale: testing only, a test lap in less time; the driving still runs in the same small steps)
     lastT = now;
     if (window.__mapView && T) { mapFrame(); return; }   // (testing: the whole circuit from above, with the OpenStreetMap outline drawn over it)
     if (!race || race.paused) { if (sky) sky.position.copy(camera.position); drawFrame(); return; }
