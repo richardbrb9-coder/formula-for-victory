@@ -29,7 +29,8 @@
         return [...FFV.TEAMS, ...FFV.LEGENDS].map((t, i) => ({ id: t.id, t, index: i, legend: !!t.legend,
             v: { wins: t.stats.wins, poles: t.stats.poles, podiums: t.stats.podiums, titles: t.stats.titles, top: t.top, debut: t.stats.debut } }));
     }
-    const myTeamId = () => (FFV.TEAMS[typeof opts !== 'undefined' ? opts.team : 0] || FFV.TEAMS[0]).id;   // the team you drive for
+    // the team you drive for: this season's, if you have a season on the go; otherwise your quick-race team
+    const myTeamId = () => { const s = FFV.season && FFV.season.load(); if (s && !FFV.season.finished(s) && FFV.teamById(s.team)) return s.team; return (FFV.TEAMS[typeof opts !== 'undefined' ? opts.team : 0] || FFV.TEAMS[0]).id; };
     // what a card's pictures depend on: if any of it changes, they are drawn again
     const sigOf = c => [ART_V, c.t.team, c.t.paint, c.t.stripe, c.t.paint2, c.t.pattern || '', c.t.number, c.legend ? '' : FFV.logoSig(c.id)].join('|');
 
@@ -45,7 +46,8 @@
             } catch (e) { ok(undefined); }
         });
     }
-    const isPic = v => typeof v === 'string' && /^data:image\/(webp|png);base64,/.test(v) && v.length < 900000;
+    // (a saved picture is only ever a plain PNG or WebP, written out in the 64 safe letters: anything else is not used)
+    const isPic = v => typeof v === 'string' && v.length < 900000 && /^data:image\/(webp|png);base64,[A-Za-z0-9+/=]+$/.test(v);
     let artRead = null, drawing = false, artRun = 0;
     function readArt() {
         return artRead || (artRead = dbDo('readonly', s => { const out = {}; s.openCursor().onsuccess = e => { const c = e.target.result; if (c) { out[c.key] = c.value; c.continue(); } }; return { get result() { return out; } }; })
@@ -183,7 +185,7 @@
                     ${row('length', [['short', `Short: ${SHORT} rounds`], ['full', 'Full: win every card']])}
                     <p class="b-label">The computer</p>
                     ${row('level', [['easy', 'Easy'], ['normal', 'Normal']])}
-                    <p class="small opt-note">${setup.level === 'easy' ? 'Easy: the computer picks any number, without thinking.' : 'Normal: the computer picks the number its card is best at.'}</p>
+                    <p class="small opt-note">${setup.level === 'easy' ? 'Easy: the computer picks any number, without thinking.' : 'Normal: the computer picks the number its card is best at.'}${setup.length === 'full' ? ` A full game stops after ${LONGEST} rounds if nobody has every card by then.` : ''}</p>
                     <div class="mode-btns"><button class="big-btn" data-dc="play">🃏 Deal the cards</button></div>
                     <p class="small dc-won">${won ? `Card games you have won: <b>${won}</b>` : 'Tap a card below to see it close up.'}</p>
                 </div>

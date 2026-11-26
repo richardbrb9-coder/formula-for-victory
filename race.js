@@ -408,6 +408,7 @@ function qualiGo() {
     Object.assign(r, { x: s.p.x, y: s.p.y, z: s.p.z, heading: s.heading, d: -QUALI_RUN, lap: -1, half: true, v: 0, steer: 0, lat: 0, latV: 0, laps: [], lapStart: race.raceTime, idx: T.indexAt(trackLen - QUALI_RUN) });
     race.lapTimes = []; race.cornerShown = null; if (ghost) { ghost.lapT0 = null; ghost.holder.visible = false; }
     document.getElementById('race-result').hidden = true;
+    const skip = document.getElementById('race-qskip'); if (skip) skip.textContent = quali.tries ? 'Stop: keep my first lap' : 'Skip qualifying';   // (on a second go, stopping keeps the lap you already have)
     race.phase = 'go'; updateCars(0); placeCamera(true); lastHud = '';
     countdown('GO!', 4); startEngine();
 }
@@ -1563,7 +1564,8 @@ function showStage() {
     const note = document.getElementById('race-pause-note'), quit = document.querySelector('#race-pause-panel [data-race="menu"]');
     if (note) { note.hidden = !champ; note.textContent = mode === 'quali' ? 'Your season is saved. If you quit now, qualifying starts again next time.' : gridOrder ? 'Your season and your place on the grid are saved. If you quit now, this race starts again from the grid next time.' : 'Your season is saved. If you quit now, this race starts again from the grid next time.'; }
     if (quit) quit.textContent = champ ? 'Save and quit' : 'Quit to menu';
-    const skip = document.getElementById('race-qskip'); if (skip) skip.hidden = mode !== 'quali';
+    const skip = document.getElementById('race-qskip'); if (skip) { skip.hidden = mode !== 'quali'; skip.textContent = 'Skip qualifying'; }
+    const keep = document.querySelector('#race-pause-panel [data-race="resume"]'); if (keep) keep.textContent = mode === 'quali' ? 'Keep driving' : 'Keep racing';
     const st = document.getElementById('race-stage'); st.classList.toggle('quali-on', mode === 'quali'); lastTower = '';
     document.body.classList.add('racing');
     resize(); setupRace(); startEngine();

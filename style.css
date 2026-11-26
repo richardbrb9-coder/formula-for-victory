@@ -742,3 +742,5 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
     .dc-seat .dc-logo { width: 28px; height: 28px; padding: 2px; } .dc-seat .dc-star { width: 26px; height: 26px; font-size: .9rem; }
     #screen-cards.dc-playing { margin-top: -6px; }
 }
+/* (cards slide in and out sideways: that must never make the page wider than the screen, or a phone zooms out to fit it) */
+#screen-cards { overflow-x: hidden; overflow-x: clip; margin: 0 -10px; padding: 0 10px; }
