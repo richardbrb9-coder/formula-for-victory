@@ -304,3 +304,11 @@ main { max-width: 1180px; margin: 0 auto; padding: 22px 22px 40px; padding-left:
 }
 /* testing: a clean picture with nothing on top of the 3D view */
 body.shots .race-hud, body.shots .race-map, body.shots .race-top, body.shots .pad, body.shots .race-flash, body.shots .race-count, body.shots .race-corner, body.shots .race-slip { display: none !important; }
+
+/* The grid flyover before a race: the driving buttons and the dials wait out of sight until the camera has settled */
+.race-hud, .pad, .race-map { transition: opacity .35s; }
+.grid-cam .race-hud, .grid-cam .pad, .grid-cam .race-map, .grid-cam .race-slip, .grid-cam .race-corner { opacity: 0; transition: none; }
+.race-skip { position: absolute; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translateX(-50%); font-family: var(--display); font-weight: 700; font-size: .8rem; letter-spacing: .2em; text-transform: uppercase; color: #fff; background: rgba(17,19,23,.55); border-radius: 999px; padding: 7px 16px; pointer-events: none; display: none; }
+.grid-cam .race-skip { display: block; }
+.race-veil { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+body.shots .race-skip { display: none !important; }
