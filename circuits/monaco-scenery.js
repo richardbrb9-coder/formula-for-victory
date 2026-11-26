@@ -234,7 +234,7 @@ export function monacoScenery(ctx) {
     buildStands(ctx, STANDS, 0xCE1126, 800);
     for (const [d, side, len, rows, gap] of STANDS) { const s = at(d), deep = rows * 0.9 + 6, p = spot(d, side, wallOf(s, side) + gap + deep / 2); mark(footprint(p.x, p.z, p.heading, len + 6, deep, 1)); }
     const props = new Quads(true);       // plain-coloured things: palms, the pool, the fountain, lawns, quays, the pit garages' details
-    const boats = new Quads(true);
+    const boats = new Quads(true), domes = [];   // (domes: the radar domes on the yachts, which are given rounded shading)
     const flat = (pts, y, colour) => props.add([pts[0][0], y, pts[0][1]], [pts[1][0], y, pts[1][1]], [pts[3][0], y, pts[3][1]], [pts[2][0], y, pts[2][1]], undefined, colour);   // (corners in order round the shape)
     const rect = (x, z, heading, w, dp) => { const c = Math.cos(heading), s = Math.sin(heading); return [[-w / 2, -dp / 2], [w / 2, -dp / 2], [w / 2, dp / 2], [-w / 2, dp / 2]].map(([lx, lz]) => [x + lx * c + lz * s, z - lx * s + lz * c]); };
     const palms = [];
@@ -403,10 +403,14 @@ export function monacoScenery(ctx) {
                 if (ends) { q([x0, y0, z0], [x0, y0, z1], [x0, y1, z0], [x0, y1, z1], col); q([x1, y0, z0], [x1, y0, z1], [x1, y1, z0], [x1, y1, z1], col); }
                 if (top) q([x0, y1, z0], [x1, y1, z0], [x0, y1, z1], [x1, y1, z1], top);
             };
+            // a radar dome: a round top on a short upright drum (on Low just the drum and a low point, for fewer corners)
             const ball = (cx, cy, cz, r, seg) => {
-                const ring = up => Array.from({ length: seg + 2 }, (_, k) => { const a = k / seg * 6.2832; return [cx + Math.cos(a) * r * 0.866, cy + up * r * 0.5, cz + Math.sin(a) * r * 0.866]; }), lo = ring(-1), hi = ring(1);
-                for (let k = 0; k < seg; k++) q(lo[k], lo[k + 1], hi[k], hi[k + 1], [tone(white, 0.8), white]);
-                for (let k = 0; k < seg; k += 2) { q(hi[k], hi[k + 1], [cx, cy + r, cz], hi[k + 2], white); q(lo[k], lo[k + 1], [cx, cy - r, cz], lo[k + 2], tone(white, 0.7)); }
+                domes.push([boats.pos.length / 3, P([cx, cy, cz])]);   // (where its corners start, and its middle: see 'domes' below)
+                const ring = (up, f) => Array.from({ length: seg + 2 }, (_, k) => { const a = k / seg * 6.2832; return [cx + Math.cos(a) * r * f, cy + up * r, cz + Math.sin(a) * r * f]; });
+                const rings = det ? [[ring(-0.9, 1), 0.78], [ring(0, 1), 0.92], [ring(0.7, 0.71), 1]] : [[ring(-0.9, 1), 0.78], [ring(0, 1), 1]], top = rings[rings.length - 1][0], base = rings[0][0];
+                for (let j = 0; j + 1 < rings.length; j++) { const [a, ka] = rings[j], [b, kb] = rings[j + 1]; for (let k = 0; k < seg; k++) q(a[k], a[k + 1], b[k], b[k + 1], [tone(white, ka), tone(white, kb)]); }
+                for (let k = 0; k < seg; k += 2) { q(top[k], top[k + 1], [cx, cy + r, cz], top[k + 2], white); q(base[k], base[k + 1], [cx, cy - 0.9 * r, cz], base[k + 2], tone(white, 0.7)); }
+                domes[domes.length - 1].push(boats.pos.length / 3);
             };
             const pickHull = rnd(), hull = o.hull || (pickHull < 0.6 ? white : pickHull < 0.75 ? navy : pickHull < 0.86 ? slate : pickHull < 0.94 ? cream : silver);
             const boot = hull === white ? one([navy, navy, black, red, teal]) : hull === cream ? one([navy, teal]) : hull === silver ? black : red, glass = one([[0.06, 0.09, 0.14], [0.05, 0.07, 0.1], [0.07, 0.12, 0.17]]);
@@ -490,11 +494,11 @@ export function monacoScenery(ctx) {
                 const leg = zz => q([ax, Y, zz], [ax + la, Y, zz], [ax - back, Y + ha, zz], [ax - back + tl, Y + ha, zz], [tone(top, 0.82), top]);
                 for (const sd of [1, -1]) { leg(sd * wa); if (det > 1) { leg(sd * (wa - tk)); q([ax, Y, sd * (wa - tk)], [ax, Y, sd * wa], [ax - back, Y + ha, sd * (wa - tk)], [ax - back, Y + ha, sd * wa], tone(top, 0.8)); q([ax + la, Y, sd * (wa - tk)], [ax + la, Y, sd * wa], [ax - back + tl, Y + ha, sd * (wa - tk)], [ax - back + tl, Y + ha, sd * wa], top); } }
                 if (det > 1) block(ax - back, ax - back + tl, Y + ha - tk, Y + ha, -wa, wa, tone(top, 0.85), top, false); else flat([ax - back, wa], [ax - back + tl, wa], Y + ha, top);
-                const r = 0.24 + len * 0.008, seg = det ? 6 : 4, cx = ax - back + tl / 2;
+                const r = 0.24 + len * 0.008, seg = det > 1 ? 8 : det ? 6 : 4, cx = ax - back + tl / 2;
                 if (len >= 28) {
                     for (const sd of [1, -1]) ball(cx, Y + ha + r * 0.85, sd * wa * 0.5, r, seg);
                     if (det) {   // an aerial between them, and the radar's bar lying along the arch
-                        const ph = ha * 0.9, pw = 0.07 + len * 0.002, lean = ph * 0.25; q([cx - pw, Y + ha, 0], [cx + pw, Y + ha, 0], [cx - lean, Y + ha + ph, 0], [cx - lean, Y + ha + ph, 0], top); q([cx, Y + ha, -pw], [cx, Y + ha, pw], [cx - lean, Y + ha + ph, 0], [cx - lean, Y + ha + ph, 0], top);
+                        const ph = ha * 0.9, pw = 0.07 + len * 0.002, lean = ph * 0.25; q([cx - pw, Y + ha, 0], [cx + pw, Y + ha, 0], [cx - lean - 0.01, Y + ha + ph, 0], [cx - lean + 0.01, Y + ha + ph, 0], top); q([cx, Y + ha, -pw], [cx, Y + ha, pw], [cx - lean, Y + ha + ph, -0.01], [cx - lean, Y + ha + ph, 0.01], top);   // (the tip not quite a point: a corner with no width has no way to face, and shows as a black speck)
                         if (det > 1) block(cx + tl * 0.2, cx + tl * 0.2 + 0.22, Y + ha, Y + ha + 0.2, -wa * 0.22, wa * 0.22, tone(top, 0.8), top);
                     }
                 } else ball(cx, Y + ha + r * 0.85, 0, r, seg);
@@ -504,7 +508,7 @@ export function monacoScenery(ctx) {
                 const cx = 0.27 * len, r = Math.min(hb * 0.6, len * 0.07), yh = yd + 0.55 * rise + 0.2, pad = [0.24, 0.27, 0.3], M = 12, pt = (k, f) => { const a = k / M * 6.2832; return [cx + Math.cos(a) * r * f, yh, Math.sin(a) * r * f]; };
                 for (let k = 0; k < M; k++) { q(pt(k, 0.8), pt(k + 1, 0.8), pt(k, 1), pt(k + 1, 1), white); if (det) { const a = pt(k, 1), b = pt(k + 1, 1); q([a[0], yh - 0.7, a[2]], [b[0], yh - 0.7, b[2]], a, b, [tone(pale, 0.6), pale]); } }
                 for (let k = 0; k < M; k += 2) q(pt(k, 0.8), pt(k + 1, 0.8), [cx, yh, 0], pt(k + 2, 0.8), pad);
-                if (det) { const u = r * 0.3, t = r * 0.07, yy = yh + 0.12, bar = (x0, x1, z0, z1) => q([x0, yy, z0], [x1, yy, z0], [x0, yy, z1], [x1, yy, z1], [0.95, 0.85, 0.3]); bar(-u + cx, u + cx, -u, -u + 2 * t); bar(-u + cx, u + cx, u - 2 * t, u); bar(cx - t, cx + t, -u, u); }
+                if (det) { const u = r * 0.3, t = r * 0.07, yy = yh + 0.2, bar = (x0, x1, z0, z1) => q([x0, yy, z0], [x1, yy, z0], [x0, yy, z1], [x1, yy, z1], [0.95, 0.85, 0.3]); bar(-u + cx, u + cx, -u, -u + 2 * t); bar(-u + cx, u + cx, u - 2 * t, u); bar(cx - t, cx + t, -u, u); }   // (the H sits a hand's width above the pad, so from far off it never flickers into it)
             }
             // --- and a tender: on the foredeck of the big ones by the quay, on the water beside the ones at anchor ---
             if (det && n >= 3 && !(heli && o.near)) {
@@ -589,7 +593,16 @@ export function monacoScenery(ctx) {
     }
     const plain = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, side: THREE.DoubleSide });
     { const m = props.mesh(plain); m.castShadow = m.receiveShadow = true; m.userData.always = true; group.add(m); }
-    { const m = boats.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide })); m.userData.far = 1100; m.userData.noProbe = true; group.add(m); }
+    { const m = boats.mesh(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.4, metalness: 0.1, side: THREE.DoubleSide })); m.userData.far = 1100;
+      // the radar domes are shaded as if round (each corner lit as the dome's surface faces there; the drum below faces straight
+      // out), not as flat facets like a cut gem.
+      // (each corner keeps the side its face is built to show, so a face drawn from the inside still lights the right way)
+      const nm = m.geometry.attributes.normal, ps = m.geometry.attributes.position;
+      for (const [v0, [cx, cy, cz], v1] of domes) for (let v = v0; v < v1; v++) {
+          const dx = ps.getX(v) - cx, dz = ps.getZ(v) - cz, dy = Math.min(0, ps.getY(v) - cy) && Math.abs(dx) + Math.abs(dz) > 1e-4 ? 0 : ps.getY(v) - cy, len = Math.hypot(dx, dy, dz), dot = (dx * nm.getX(v) + dy * nm.getY(v) + dz * nm.getZ(v)) / (len || 1);
+          if (Math.abs(dot) > 0.05) nm.setXYZ(v, dx * Math.sign(dot) / len, dy * Math.sign(dot) / len, dz * Math.sign(dot) / len);   // (the flat underneath keeps its own)
+      }
+      m.userData.noProbe = true; group.add(m); }
 
     // --- advertising boards on the straights, braking boards before the three big stops ---
     boards(ctx, { braking: BRAKING, every: 64, gap: 0.75, maxBend: 0.004, skip: (d, side) => at(d).roofed || inZone(d, t0 - 30, t1 + 30) || onStand(STANDS, L, d, side, 0) || inZone(d, 3040, 60) });
