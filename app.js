@@ -381,6 +381,8 @@ function drawTitleArt() {
 }
 window.addEventListener('resize', drawTitleArt);
 renderTitle(); if (document.fonts) document.fonts.ready.then(drawTitleArt);
+// a teams.csv has been loaded: its first team becomes the one you drive for (you can still choose another)
+document.addEventListener('ffv-first-team', () => { opts.team = 0; storeSet('team', 0); if (typeof champDraft !== 'undefined') { champDraft.team = 0; storeSet('champSetup', champDraft); } });
 // a family's own team names or logos have changed (or have just been read): redraw whichever screen shows them
 document.addEventListener('ffv-teams', () => { if (racing()) return; if (current === 'setup') renderSetup(); if (current === 'champ') renderChamp('keep'); });
 

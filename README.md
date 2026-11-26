@@ -60,6 +60,30 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 - "Clear my teams" (tap twice) wipes the names, colours and logos. `FFV.resetNames()` does the names alone.
 - Test with your own plain shapes (a coloured square with "T1" on it), never with real logos.
 
+### `teams.csv`: the whole set-up in one file (still on the device only)
+
+Put a file called `teams.csv` in the zip with the logos (or pick it along with them). Any spreadsheet or notes app can
+make it. First line: the column names. Then one line a team, for the eleven cars in order; the first team becomes the
+one you drive for (you can still choose another on the set-up screens).
+
+```
+team,driver,number,colour1,colour2,colour3,pattern,logo
+Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg
+```
+
+- Only `team` is needed. A missing column changes nothing; an empty or unreadable box goes back to that team's usual.
+- `number` 1 to 99. Colours are `#RRGGBB` (the `#` may be left off; `color1` is accepted too): `colour1` the main
+  paint, `colour2` the stripes, `colour3` the second colour. `logo` is the name of a picture loaded with it; with no
+  `logo` column the pictures go to the teams in A to Z order.
+- `pattern` is one of: `plain`, `stripe`, `twin-stripe`, `side-stripes`, `two-tone`, `chequer`, `lightning`, `racing`,
+  `bands`, `chevrons` (the car painter's own styles: `PATTERNS` in `teams.js`). Left out, a team keeps its usual one.
+- Read forgivingly: quoted boxes, spare spaces, Windows line endings, blank lines, unknown columns. At most 50 lines,
+  names cut to 30 letters. Everything is plain text: nothing in the file is ever worked out or run, and a name such as
+  `=1+1` is just a name. On the My teams screen names are put on the page as text, never as markup; the tables
+  elsewhere escape them.
+- "Export my teams" saves the current set-up as `teams.csv` (without the logos), to change and load back. A name
+  starting with `=`, `+`, `-` or `@` is saved with a `'` in front, so a spreadsheet does not treat it as a sum.
+
 ## The championship
 
 - Five races in the order set by `ROUNDS` in `season.js` (Monza, Silverstone, Suzuka, Monaco, Las Vegas), each with its

@@ -10,7 +10,8 @@
 // The order matters too: a team's place in the list picks its paint pattern, and the menus remember your team by it.
 //
 // A family's own teams, on their own device only (the "My teams" screen: see myteams.js). A device can keep its own
-// names, car numbers and colours under 'ffv_names', as { apex: { team, driver, number, paint, stripe, paint2 }, ... }.
+// names, car numbers, colours and paint pattern under 'ffv_names', as { apex: { team, driver, number, paint, stripe,
+// paint2, pattern }, ... }.
 // FFV.rename() saves one team's, FFV.resetNames() goes back to the table below. Nothing typed on a device is ever
 // sent anywhere or put into the app's own files: the game everyone downloads only ever has the made-up names here.
 'use strict';
@@ -29,7 +30,12 @@
         { id: 'blaze',   team: 'Blaze Racing',     driver: 'Mateo Brandt',    number: 21, paint: '#C62828', stripe: '#F4F6F8', paint2: '#FFB300', pace: 0.55 }
     ];
     const YOU = 'You';                  // what the player is called in every table
-    const KEY = 'ffv_names', MAX = 24;  // (a name longer than this would not fit on the podium)
+    const KEY = 'ffv_names', MAX = 30;  // (a name longer than this would not fit on the podium)
+    // The paint patterns a team can have (the car painter's own styles: see liveryTexture in carmodel.js), by the plain
+    // names used on the My teams screen and in a teams.csv file: [the painter's name for it, two-tone body?].
+    // A team with no pattern of its own keeps the one its place in the list gives it.
+    const PATTERNS = { plain: ['none', false], stripe: ['single', false], 'twin-stripe': ['twin', false], 'side-stripes': ['side', false], 'two-tone': ['none', true],
+        chequer: ['chequer', false], lightning: ['lightning', false], racing: ['rally', false], bands: ['endurance', false], chevrons: ['gt', false] };
     const ORIGINAL = TEAMS.map(t => ({ ...t }));
 
     // a name typed on the device: plain text only, trimmed, not too long (it is still escaped wherever it is shown)
@@ -37,6 +43,7 @@
     const COLOURS = ['paint', 'stripe', 'paint2'];
     const colour = v => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toUpperCase() : '';   // (only plain #RRGGBB colours)
     const number = v => { const n = Math.floor(+v); return Number.isFinite(n) && n >= 1 && n <= 99 ? n : 0; };
+    const pattern = v => typeof v === 'string' && Object.prototype.hasOwnProperty.call(PATTERNS, v.trim().toLowerCase()) ? v.trim().toLowerCase() : '';
     function saved() { try { const v = JSON.parse(localStorage.getItem(KEY)); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (e) { return {}; } }
     function applyNames() {
         const own = saved();
@@ -45,16 +52,17 @@
             t.team = clean(o.team) || ORIGINAL[i].team; t.driver = clean(o.driver) || ORIGINAL[i].driver;
             t.number = number(o.number) || ORIGINAL[i].number;
             for (const k of COLOURS) t[k] = colour(o[k]) || ORIGINAL[i][k];
+            t.pattern = pattern(o.pattern);
         });
     }
     applyNames();
 
     window.FFV = Object.assign(window.FFV || {}, {
-        TEAMS, YOU,
+        TEAMS, YOU, PATTERNS,
         teamIndex: id => TEAMS.findIndex(t => t.id === id),
         teamById: id => TEAMS.find(t => t.id === id) || null,
         original: id => { const i = TEAMS.findIndex(t => t.id === id); return i < 0 ? null : { ...ORIGINAL[i] }; },
-        changed: () => TEAMS.some((t, i) => ['team', 'driver', 'number', ...COLOURS].some(k => t[k] !== ORIGINAL[i][k])),
+        changed: () => TEAMS.some((t, i) => t.pattern || ['team', 'driver', 'number', ...COLOURS].some(k => t[k] !== ORIGINAL[i][k])),
         cleanName: clean,
         // save one team's own names, number and colours (only the ones given; an empty one goes back to the table's)
         rename(id, names) {
@@ -64,6 +72,7 @@
             if ('driver' in names) o.driver = clean(names.driver);
             if ('number' in names) o.number = number(names.number);
             for (const k of COLOURS) if (k in names) o[k] = colour(names[k]);
+            if ('pattern' in names) o.pattern = pattern(names.pattern);
             own[id] = o;
             try { localStorage.setItem(KEY, JSON.stringify(own)); } catch (e) { return false; }
             applyNames(); return true;

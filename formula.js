@@ -421,6 +421,13 @@ export function formulaMarks(x, d, W, H, Y, num, tag) {
     };
     if (num) { onTop(x, d, W, H, Y, 1.02, text(num, 0.15, 'Orbitron, Arial Black, sans-serif', 0.24)); for (const side of ['right', 'left']) onStrip(x, d, W, H, Y, 4.08, 0.79, side, text(num, 0.2, 'Orbitron, Arial Black, sans-serif')); }
     if (tag) for (const side of ['right', 'left']) onStrip(x, d, W, H, Y, 5.25, 0.76, side, text(tag, 0.1, '"Exo 2", Arial, sans-serif', 0.44));
+    // a family's own logo on a car with one of the simple paint patterns (the team schemes paint theirs in formulaTeam)
+    const logo = d.logo && (d.logo.naturalWidth || d.logo.width) && !['rally', 'endurance', 'gt'].includes(d.livery) ? d.logo : null;
+    if (logo) {
+        const own = (wM, hM) => px => { const iw = logo.naturalWidth || logo.width, ih = logo.naturalHeight || logo.height, k = Math.min(wM * px / iw, hM * px / ih); x.drawImage(logo, -iw * k / 2, -ih * k / 2, iw * k, ih * k); };
+        for (const side of ['right', 'left']) onStrip(x, d, W, H, Y, 3.12, 0.8, side, own(0.56, 0.2));
+        onTop(x, d, W, H, Y, 1.5, own(0.3, 0.2));
+    }
 }
 // fine dark lines where the body panels join: the nose cone and the engine cover lift off
 export function formulaPanelLines(x, d, W, H, Y) {

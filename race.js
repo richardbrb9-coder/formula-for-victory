@@ -162,8 +162,8 @@ function showDetail(r, full) {
 export const TEAMS = window.FFV.TEAMS, YOU = window.FFV.YOU;
 function teamDesign(i) {
     const k = i % TEAMS.length, t = TEAMS[k];
-    const d = applyPreset({ ...DEFAULT }, 'formula');
-    return { ...d, name: t.team, driver: t.driver, teamIdx: k, logo: window.FFV.logoImage ? window.FFV.logoImage(t.id) : null, paint: t.paint, stripeColour: t.stripe, paint2: t.paint2, caliper: t.stripe, livery: ['rally', 'endurance', 'gt'][i % 3], number: String(t.number), finish: ['gloss', 'metallic', 'gloss'][i % 3], tag: '' };
+    const d = applyPreset({ ...DEFAULT }, 'formula'), own = window.FFV.PATTERNS[t.pattern];   // (own: a paint pattern chosen on the My teams screen)
+    return { ...d, name: t.team, driver: t.driver, teamIdx: k, logo: window.FFV.logoImage ? window.FFV.logoImage(t.id) : null, paint: t.paint, stripeColour: t.stripe, paint2: t.paint2, caliper: t.stripe, livery: own ? own[0] : ['rally', 'endurance', 'gt'][i % 3], twoTone: own ? own[1] : d.twoTone, number: String(t.number), finish: ['gloss', 'metallic', 'gloss'][i % 3], tag: '' };
 }
 const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th');
 
