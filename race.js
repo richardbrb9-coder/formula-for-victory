@@ -331,7 +331,7 @@ function setupRace() {
     dmg.clearPieces();
     for (const r of [player, ...rivals]) dmg.fit(r);
     try { for (const o of dmg.warmUp(player)) { const was = o.visible; o.visible = true; renderer.compile(o, camera, scene); o.visible = was; } } catch (e) { /* made ready at the first bump instead */ }
-    race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], hits: [] };
+    race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], tapeTimes: [], hits: [] };
     updateCars(0); placeCamera(true);
     startGridCam();
     hud();
@@ -833,12 +833,28 @@ function stopReplay() {
     const bar = document.getElementById('race-replay'); if (bar) bar.hidden = true;
     document.getElementById('race-stage').classList.remove('replaying');
 }
-// where the cars were at replay time t (smoothly between the tape's samples)
+// where the cars were at replay time t (smoothly between the tape's samples). Each sample keeps the moment it was taken,
+// and between two samples the car follows a smooth curve that leaves and arrives along its heading at its own speed, so
+// it glides through corners instead of moving in short straight lines that kink ten times a second.
+function tapeAt(t) {
+    const T = race.tapeTimes, rt = T[0] + t; let lo = 0, hi = T.length - 1;
+    if (rt >= T[hi]) return [hi - 1, 1];
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= rt) lo = m; else hi = m; }
+    return [lo, Math.max(0, Math.min(1, (rt - T[lo]) / Math.max(1e-6, T[lo + 1] - T[lo])))];
+}
 function replayPose(t) {
-    const tape = race.tape, f = Math.min(tape.length - 1.001, t / 0.1), i = Math.floor(f), u = f - i, A = tape[i], B = tape[i + 1];
+    const tape = race.tape, [i, u] = tapeAt(t), A = tape[i], B = tape[i + 1], h = race.tapeTimes[i + 1] - race.tapeTimes[i];
+    const u2 = u * u, u3 = u2 * u, h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
     [player, ...rivals].forEach((c, k) => {
         const a = A[k], b = B[k]; if (!a || !b) return;
-        c.x = a[0] + (b[0] - a[0]) * u; c.z = a[1] + (b[1] - a[1]) * u; c.heading = a[2] + wrapAngle(b[2] - a[2]) * u;
+        const jump = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 > 400;   // (a car put back on the road jumps: no curve across that)
+        if (jump) { c.x = a[0] + (b[0] - a[0]) * u; c.z = a[1] + (b[1] - a[1]) * u; }
+        else {
+            const ta = a[4] * h, tb = b[4] * h;
+            c.x = h00 * a[0] + h10 * Math.cos(a[2]) * ta + h01 * b[0] + h11 * Math.cos(b[2]) * tb;
+            c.z = h00 * a[1] - h10 * Math.sin(a[2]) * ta + h01 * b[1] - h11 * Math.sin(b[2]) * tb;
+        }
+        c.heading = a[2] + wrapAngle(b[2] - a[2]) * u;
         c.steer = a[3] + (b[3] - a[3]) * u; c.v = a[4] + (b[4] - a[4]) * u;
         // which part of the lap the car is on (for the road's height under it): near where it was, or anywhere after a jump
         c.idx = nearestIndex(c); const p = samples[c.idx].p;
@@ -848,10 +864,10 @@ function replayPose(t) {
 // bring back the bumps that had happened by replay time t (the tape starts a tenth of a second into the race)
 function replayHits(t, pieces) {
     const R = race.replay, all = [player, ...rivals];
-    while (R.hit < race.hits.length && race.hits[R.hit].t - 0.1 <= t) { const ev = race.hits[R.hit++]; if (all[ev.k]) dmg.apply(all[ev.k], ev, pieces); }
+    while (R.hit < race.hits.length && race.hits[R.hit].t <= race.tapeTimes[0] + t) { const ev = race.hits[R.hit++]; if (all[ev.k]) dmg.apply(all[ev.k], ev, pieces); }
 }
 function replayFrame(dt) {
-    const R = race.replay, len = (race.tape.length - 1) * 0.1;
+    const R = race.replay, len = race.tapeTimes[race.tapeTimes.length - 1] - race.tapeTimes[0];
     R.t += dt; if (R.t >= len) { R.t = 0; R.cam = null; R.hit = 0; for (const c of [player, ...rivals]) dmg.reset(c); dmg.clearPieces(); }       // loops round to the start
     replayPose(R.t); replayHits(R.t, true); updateCars(dt);
     // the director: cut to the next shot every few seconds (a trackside shot lasts until the cars have passed)
@@ -1326,7 +1342,7 @@ function frame(now) {
     // the replay tape: every car, ten times a second, from the start until a few seconds after you finish
     if ((race.phase === 'go' || race.phase === 'done') && (race.tapeEnd == null || race.raceTime < race.tapeEnd)) {
         race.tapeT = (race.tapeT || 0) + dt;
-        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v])); }
+        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v])); race.tapeTimes.push(race.raceTime); }   // (with the exact moment of each sample: frames don't land exactly on the tenths, and playing them back as if they did made the cars judder)
     }
     if (mode === 'trial' && race.phase === 'go') {
         race.recT = (race.recT || 0) + dt;
