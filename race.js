@@ -13,7 +13,8 @@ import { RaceSound } from './soundfx.js';
 import { Weather, WEATHERS, weatherLook } from './weather.js';
 import * as BD from './backdrop.js';
 import { Post } from './post.js';
-import { createCar, carStats, DEFAULT, applyPreset } from './carmodel.js';
+import { createCar, carStats } from './carmodel.js';
+import { teamDesign } from './teamdesign.js';
 
 // =====================================================================
 //  THE TRACK (built by track.js from the circuit's data; everything else is placed along it)
@@ -159,12 +160,8 @@ function showDetail(r, full) {
     r.model.group.visible = full;
 }
 // The eleven made-up teams and their drivers live in teams.js (the one place their names, colours and numbers are kept).
-export const TEAMS = window.FFV.TEAMS, YOU = window.FFV.YOU;
-function teamDesign(i) {
-    const k = i % TEAMS.length, t = TEAMS[k];
-    const d = applyPreset({ ...DEFAULT }, 'formula'), own = window.FFV.PATTERNS[t.pattern];   // (own: a paint pattern chosen on the My teams screen)
-    return { ...d, name: t.team, driver: t.driver, teamIdx: k, logo: window.FFV.logoImage ? window.FFV.logoImage(t.id) : null, paint: t.paint, stripeColour: t.stripe, paint2: t.paint2, caliper: t.stripe, livery: own ? own[0] : ['rally', 'endurance', 'gt'][i % 3], twoTone: own ? own[1] : d.twoTone, number: String(t.number), finish: ['gloss', 'metallic', 'gloss'][i % 3], tag: '' };
-}
+export const TEAMS = window.FFV.TEAMS, YOU_TAG = window.FFV.youTag;   // (you are shown by your driver's own name, with a small YOU tag)
+// (each team's car and helmet colours are put together in teamdesign.js, which the Driver Cards' pictures use too)
 const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th');
 
 // =====================================================================
@@ -178,9 +175,11 @@ let weatherKind = Object.keys(WEATHERS).includes(store('raceWeather', 'sunny')) 
 let qualitySetting = store('raceQuality', 'auto'), quality = qualitySetting === 'auto' ? autoQuality() : qualitySetting;
 // 'auto': the level this device settled on last time, or a first guess
 function autoQuality() { const q = store('autoLevel', null); return SC.QUALITY[q] ? q : SC.guessQuality(); }
-let world = null, player = null, rivals = [], ghost = null, mode = 'race', difficulty = 'medium';
+let world = null, player = null, rivals = [], ghost = null, mode = 'race', difficulty = 'medium';   // mode: 'race', 'trial', or 'quali' (qualifying: alone on the track, before a race)
+let gridOrder = null, quali = null;               // the starting grid (team numbers, pole first) once it is known; this qualifying session (see QUALIFYING)
 const fieldSize = TEAMS.length - 1;                // ten rivals: a grid of eleven
 let lapsChosen = 3, playerTeam = 5, onExit = null; // set by the menus (see start)
+let onGrid = null;                                // told the grid as soon as qualifying has set it (the championship saves it)
 let champ = null;                                 // a championship race: { round, of, field, points, onFinish } (see start)
 let race = null;                                  // { phase: 'grid'|'lights'|'go'|'done', t, lightsT, results }
 const input = { left: false, right: false, gas: false, brake: false, tilt: 0 };
@@ -315,15 +314,18 @@ function setupRace() {
         // (a single race: the rivals in any order. A championship race: in the order the season gives them, see season.js)
         const anyOrder = TEAMS.map((_, i) => i).filter(i => i !== playerTeam).sort(() => Math.random() - 0.5), given = champ && champ.field;
         const others = Array.isArray(given) && given.length === fieldSize && new Set(given).size === fieldSize && given.every(i => Number.isInteger(i) && TEAMS[i] && i !== playerTeam) ? given : anyOrder;
-        const mine = Number.isInteger(window.__gridSlot) ? Math.max(0, Math.min(fieldSize, window.__gridSlot)) : fieldSize, free = slots.filter((_, k) => k !== mine);   // (testing only: start from another grid box)
+        // after qualifying (or with a grid the season saved): everyone starts where they qualified
+        const set = validGrid(gridOrder) ? gridOrder : null, order = set ? set.filter(i => i !== playerTeam) : others;
+        const mine = set ? set.indexOf(playerTeam) : Number.isInteger(window.__gridSlot) ? Math.max(0, Math.min(fieldSize, window.__gridSlot)) : fieldSize, free = slots.filter((_, k) => k !== mine);   // (__gridSlot: testing only, start from another grid box)
         for (let i = 0; i < fieldSize; i++) {
-            const r = makeRacer(teamDesign(others[i]), DIFF[difficulty] * (1 - i * 0.06 / fieldSize), false);
+            const r = makeRacer(teamDesign(order[i]), DIFF[difficulty] * (1 - i * 0.06 / fieldSize), false);
             r.lineOffset = ((i % 3) - 1) * 1.6;
             rivals.push(r); scene.add(r.holder); place(r, free[i]);
         }
         place(player, slots[mine]);
     } else {
-        place(player, [-12, 0]);
+        // a time trial starts just behind the line; qualifying a good way back, so you cross the line at speed
+        place(player, [mode === 'quali' ? -QUALI_RUN : -12, 0]);
         const g = store('ghost_' + TRACK.id, null);
         if (g && g.frames && g.frames.length) {
             ghost = makeRacer(teamDesign(playerTeam), 1, false);
@@ -339,8 +341,95 @@ function setupRace() {
     try { for (const o of dmg.warmUp(player)) { const was = o.visible; o.visible = true; renderer.compile(o, camera, scene); o.visible = was; } } catch (e) { /* made ready at the first bump instead */ }
     race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], tapeTimes: [], hits: [] };
     updateCars(0); placeCamera(true);
+    if (mode === 'quali') startQuali(); else quali = null;
     startGridCam();
     hud();
+}
+const validGrid = g => Array.isArray(g) && g.length === TEAMS.length && new Set(g).size === TEAMS.length && g.every(i => Number.isInteger(i) && TEAMS[i]);
+
+// =====================================================================
+//  QUALIFYING (only if it is switched on in the set-up): before the race you drive alone. A short run up to the line,
+//  then one timed flying lap; you may have one more go, and your quicker lap counts. The rivals' laps are worked out
+//  from how quick each car is at this level of rivals, with a little luck, so a good lap can win pole position.
+//  Skipping it puts you at the back of the grid, exactly as if qualifying were switched off.
+// =====================================================================
+const QUALI_RUN = 220, QUALI_TRIES = 2;   // metres before the line that you set off from; how many flying laps you may have
+// One flying lap by a rival with nobody in the way: the very same sums that drive the rivals in a race (see driveRival),
+// run quickly round two laps. The second lap, started at full speed, is the one that is timed.
+function simLap(factor) {
+    const P = perf(player.stats, factor), h = 0.02; let v = 0, d = 0, t = 0, t1 = null;
+    while (d < trackLen * 2 && t < 1200) {
+        let target = P.vmax;
+        for (let ahead = 0, far = v * v / (2 * P.brake * 0.8) + 40; ahead <= far; ahead += 8) { const k = Math.abs(sampleAt(d + ahead).ks), vc = k > 1e-4 ? Math.sqrt(P.grip * 0.92 / k) : P.vmax; target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.8 * ahead)); }
+        v = Math.max(0, v + ((v < target ? P.a0 * Math.max(0.1, 1 - (v / P.vmax) ** 2) : -P.brake * Math.min(1, (v - target) / 3)) - 0.25) * h); d += v * h; t += h;
+        if (t1 == null && d >= trackLen) t1 = t - (d - trackLen) / Math.max(1, v);
+    }
+    return t - (d - trackLen * 2) / Math.max(1, v) - (t1 || 0);
+}
+function startQuali() {
+    // the quickest and slowest a rival can be at this level (the same spread of speeds as the cars on a race's grid)
+    const quick = simLap(DIFF[difficulty]), slow = simLap(DIFF[difficulty] * (1 - 0.06 * (fieldSize - 1) / fieldSize)), rand = window.__qualiRand || Math.random;
+    // each driver's lap: nearer the quick end the more 'pace' they have (teams.js), with some luck either way
+    const times = TEAMS.map((t, i) => ({ team: i, time: i === playerTeam ? null : quick + (slow - quick) * Math.max(-0.08, Math.min(1.08, 1 - t.pace + (rand() - 0.5) * 0.5)) + (rand() - 0.5) * 0.12 }));
+    quali = { times, best: null, tries: 0, skipped: false, counted: false };
+    race.phase = 'qintro'; qualiPanel();
+}
+// the order after qualifying: quickest first; anyone without a time (you, if you skipped it) at the back
+function qualiOrder() {
+    const rows = quali.times.map(r => ({ ...r, time: r.team === playerTeam ? quali.best : r.time }));
+    return rows.sort((a, b) => (a.time ?? Infinity) - (b.time ?? Infinity));
+}
+function qualiPanel() {
+    const el = document.getElementById('race-result'), Q = quali, kick = `Qualifying · ${escapeHtml(TRACK.name)}${champ ? ` · round ${champ.round} of ${champ.of}` : ''}`;
+    el.className = 'race-panel'; el.classList.remove('has-podium', 'podium');
+    if (race.phase === 'qintro') {
+        el.innerHTML = `<div class="rr-box quali-box"><span class="kicker">${kick}</span><h2>One flying lap</h2>
+            <p class="q-how">Drive up to the start line. The clock starts as you cross it: then it is <b>one lap, as fast as you can</b>. Your lap time decides where you start the race. The quickest driver starts at the front, on <b>pole position</b>.</p>
+            <p class="small">You are on the track on your own. You can have one more go afterwards, and your quicker lap counts.</p>
+            <div class="rr-actions"><button class="big-btn" data-race="qgo">⏱ Start qualifying</button><button class="act-btn ghost" data-race="qskip">Skip qualifying</button></div>
+            <p class="small q-skipnote">Skip: you start the race at the back of the grid, like a race with qualifying switched off.</p></div>`;
+    } else {
+        const rows = qualiOrder(), pole = rows[0].time, pos = rows.findIndex(r => r.team === playerTeam) + 1, left = QUALI_TRIES - Q.tries;
+        const body = rows.map((r, i) => { const t = TEAMS[r.team], me = r.team === playerTeam;
+            return `<tr class="${me ? 'me' : ''}"><td>${i + 1}</td><td>${badge({ teamIdx: r.team, colour: t.paint })}${escapeHtml(t.driver)}${me ? YOU_TAG : ''} <small>${escapeHtml(t.team)}</small></td><td>${r.time == null ? 'no time' : fmtTime(r.time)}</td><td>${r.time == null ? '' : i === 0 ? 'POLE' : '+' + (r.time - pole).toFixed(2)}</td></tr>`; }).join('');
+        const title = Q.skipped && Q.best == null ? `You start ${ordinal(pos)}, at the back` : pos === 1 ? 'Pole position!' : `You qualified ${ordinal(pos)}`;
+        const note = Q.skipped && Q.best == null ? 'You skipped qualifying, so you start behind everyone who set a time.' : pos === 1 ? `Your lap of ${fmtTime(Q.best)} was the quickest of all. You start at the very front.` : `Your best lap was ${fmtTime(Q.best)}, ${(Q.best - pole).toFixed(2)} seconds off pole.`;
+        el.innerHTML = `<div class="rr-box champ-box quali-box"><span class="kicker">${kick}</span><h2>${title}</h2><p class="q-how">${note}</p>
+            <table class="champ-table quali-table"><thead><tr><th></th><th>Driver</th><th>Lap time</th><th>Gap</th></tr></thead><tbody>${body}</tbody></table>
+            <div class="rr-actions"><button class="big-btn" data-race="qrace">🏁 Start the race from ${ordinal(pos)}</button>${left > 0 && !Q.skipped ? `<button class="act-btn" data-race="qretry">🔁 One more go</button>` : ''}<button class="act-btn ghost" data-race="menu">${champ ? 'Save and quit' : 'Menu'}</button></div>
+            <p class="small q-skipnote">This is the starting grid for the race.${champ ? ' It is saved with your season.' : ''}</p></div>`;
+    }
+    el.hidden = false;
+}
+// off you go (again): from the run-up, with the clock waiting for you at the line
+function qualiGo() {
+    if (!quali || (race.phase !== 'qintro' && race.phase !== 'qdone')) return;
+    const s = sampleAt(trackLen - QUALI_RUN), r = player;
+    Object.assign(r, { x: s.p.x, y: s.p.y, z: s.p.z, heading: s.heading, d: -QUALI_RUN, lap: -1, half: true, v: 0, steer: 0, lat: 0, latV: 0, laps: [], lapStart: race.raceTime, idx: T.indexAt(trackLen - QUALI_RUN) });
+    race.lapTimes = []; race.cornerShown = null; if (ghost) { ghost.lapT0 = null; ghost.holder.visible = false; }
+    document.getElementById('race-result').hidden = true;
+    race.phase = 'go'; updateCars(0); placeCamera(true); lastHud = '';
+    countdown('GO!', 4); startEngine();
+}
+// your flying lap is done (or you skipped): work out the grid, tell the season, and show everyone's times
+function qualiDone(lapTime, skipped = false) {
+    const Q = quali; if (!Q) return;
+    if (lapTime != null) { Q.tries++; if (Q.best == null || lapTime < Q.best) Q.best = lapTime; }
+    if (skipped) Q.skipped = true;
+    race.phase = 'qdone'; player.v = 0; Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; });
+    race.paused = false; document.getElementById('race-pause-panel').hidden = true;
+    stopEngine(); clearTimeout(flashTimer); document.getElementById('race-flash').classList.remove('show');
+    const order = qualiOrder(), pos = order.findIndex(r => r.team === playerTeam) + 1;
+    gridOrder = order.map(r => r.team);
+    if (onGrid) { try { onGrid(gridOrder.slice(), { pos, time: Q.best, skipped: Q.skipped && Q.best == null }); } catch (e) { console.error(e); } }
+    if (lapTime != null && window.playSound) { window.playSound(pos === 1 ? 'win' : 'go'); if (pos <= 3) window.playSound('cheer'); }
+    if (pos === 1 && Q.best != null && !Q.counted) { Q.counted = true; window.FFV.myStats.add('poles'); }   // (pole position: one for your own Driver Card, counted once)
+    qualiPanel();
+}
+// from the grid's table into the race itself
+function qualiToRace() {
+    if (!quali || race.phase !== 'qdone' || !validGrid(gridOrder)) return;
+    mode = 'race'; showStage();
 }
 
 // =====================================================================
@@ -551,10 +640,10 @@ function collisions() {
     }
 }
 function progressOf(r) { return r.lap * trackLen + samples[r.idx].d; }
+const raceOrder = () => [player, ...rivals].sort((a, b) => (a.finished ?? Infinity) - (b.finished ?? Infinity) || progressOf(b) - progressOf(a));
 function positionOf(r) {
     if (mode !== 'race') return 1;
-    const all = [player, ...rivals].sort((a, b) => (a.finished ?? Infinity) - (b.finished ?? Infinity) || progressOf(b) - progressOf(a));
-    return all.indexOf(r) + 1;
+    return raceOrder().indexOf(r) + 1;
 }
 // Which rivals are drawn in full: only the few nearest the camera, and only within fullDetailAt() metres (a car already
 // drawn in full gets a few metres' head start, so two cars side by side don't keep swapping). In a bunched-up pack at
@@ -625,8 +714,9 @@ function roadHeight(wx, wz, r) {
 // =====================================================================
 function onPlayerLap(lapTime) {
     // lapTime is null when crossing the line for the first time, which starts lap 1
-    if (lapTime == null) { if (mode === 'trial') { race.recording = []; setupGhostFromStore(); } return; }
+    if (lapTime == null) { if (mode === 'trial') { race.recording = []; setupGhostFromStore(); } if (mode === 'quali') { setupGhostFromStore(); flash('Flying lap: go, go, go!', 1500); } return; }
     race.lapTimes.push(lapTime);
+    if (mode === 'quali') { const key = 'raceBest_' + TRACK.id, best = store(key, null); if (best == null || lapTime < best) storeSet(key, lapTime); qualiDone(lapTime); return; }
     const key = 'raceBest_' + TRACK.id, best = store(key, null);
     let msg = `Lap ${fmtTime(lapTime)}`;
     if (best == null || lapTime < best) { storeSet(key, lapTime); msg += ' · New best lap!'; window.playSound && window.playSound('win'); }
@@ -673,7 +763,7 @@ function classify() {
         for (const r of rivals) driveRival(r, 0.01);
         collisions(); race.raceTime += 0.01;
     }
-    const rows = [player, ...rivals].map((c, k) => ({ k, c, name: k === 0 ? YOU : c.design.driver, team: c.design.name, teamIdx: c.design.teamIdx, colour: c.design.paint, total: c.finished,
+    const rows = [player, ...rivals].map((c, k) => ({ k, c, name: c.design.driver, team: c.design.name, teamIdx: c.design.teamIdx, colour: c.design.paint, total: c.finished,
         // lap 1 is timed from the green light (like a real race), so the laps add up to the race time
         laps: c.finished == null ? [] : c.laps.slice(0, raceLaps()).map((t, i) => i === 0 ? t + c.lineStart : t), best: c.best, far: progressOf(c) }));
     rows.sort((a, b) => (a.total ?? Infinity) - (b.total ?? Infinity) || before[b.k] - before[a.k] || b.far - a.far);
@@ -693,6 +783,7 @@ function finishRace() {
     const medal = ['🥇 Gold', '🥈 Silver', '🥉 Bronze'][pos - 1] || '';
     const medals = store('medals', {}), key = TRACK.id + '_' + difficulty, prev = medals[key];
     if (pos <= 3 && (!prev || pos < prev)) { medals[key] = pos; storeSet('medals', medals); }
+    { const mine = window.FFV.myStats; mine.add('races'); if (pos === 1) mine.add('wins'); if (pos <= 3) mine.add('podiums'); }   // (what you have done in this game: shown on your Driver Card)
     if (window.playSound) { window.playSound(pos === 1 ? 'win' : pos > 3 ? 'lose' : 'go'); window.playSound(pos <= 3 ? 'bigcheer' : 'cheer'); }   // the crowd cheers every finisher, loudest for the top three
     // a championship race: the season is told the finishing order straight away, so nothing is lost if the app is closed now
     const C = champ;
@@ -704,7 +795,7 @@ function finishRace() {
         : '<button class="big-btn" data-race="again">Race again</button><button class="act-btn" data-race="replay">🎬 Watch replay</button><button class="act-btn ghost" data-race="menu">Menu</button>';
     const extra = (medal ? `<p class="rr-medal">${medal}</p>` : '') + (C ? `<p class="rr-points">${gained ? `+${gained} point${gained === 1 ? '' : 's'}` : 'No points this time'}</p>` : '');
     race.sheet = { kicker, title, extra, actions, more: '📋 Results' };
-    const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td>${badge(row)}${escapeHtml(row.name)} <small>${escapeHtml(row.team)}</small></td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td>${C && C.points ? `<td class="pts">${C.points[i] ? '+' + C.points[i] : ''}</td>` : ''}</tr>`).join('');
+    const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td>${badge(row)}${escapeHtml(row.name)}${row.k === 0 ? YOU_TAG : ''} <small>${escapeHtml(row.team)}</small></td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td>${C && C.points ? `<td class="pts">${C.points[i] ? '+' + C.points[i] : ''}</td>` : ''}</tr>`).join('');
     el.innerHTML = `<div class="rr-box champ-box"><span class="kicker">${kicker}</span><h2>${title}</h2>${race.sheet.extra}
         <table class="champ-table"><thead><tr><th></th><th>Driver</th><th>Race time</th><th>Best lap</th>${C && C.points ? '<th>Points</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
         <div class="rr-actions">${actions}${PODIUM_BTN}</div></div>`;
@@ -768,9 +859,9 @@ function startPodium() {
     podiumScene();
     // the sheet under the cars: who came where, each lap and the race time. Second, first, third, the same way round as the steps.
     const card = i => { const row = top[i]; if (!row) return '<div></div>';
-        return `<div class="pod-card p${i + 1} ${row.k === 0 ? 'me' : ''}" style="--c:${row.colour}"><div class="pod-pos">${ordinal(i + 1)}</div><div class="pod-name">${badge(row)}${escapeHtml(row.name)}</div>${lapRows(row)}</div>`; };
+        return `<div class="pod-card p${i + 1} ${row.k === 0 ? 'me' : ''}" style="--c:${row.colour}"><div class="pod-pos">${ordinal(i + 1)}${row.k === 0 ? YOU_TAG : ''}</div><div class="pod-name">${badge(row)}${escapeHtml(row.name)}</div>${lapRows(row)}</div>`; };
     const mine = rows[you], S = race.sheet;
-    const own = you >= 3 ? `<div class="pod-you"><b>You · ${ordinal(you + 1)}</b>${mine.laps.map((t, i) => `<span>Lap ${i + 1} <b>${fmtTime(t)}</b></span>`).join('')}<span>Total <b>${fmtTime(mine.total)}</b></span></div>` : '';
+    const own = you >= 3 ? `<div class="pod-you"><b>${escapeHtml(mine.name)}${YOU_TAG} · ${ordinal(you + 1)}</b>${mine.laps.map((t, i) => `<span>Lap ${i + 1} <b>${fmtTime(t)}</b></span>`).join('')}<span>Total <b>${fmtTime(mine.total)}</b></span></div>` : '';
     const el = document.getElementById('race-result'), sheet = document.createElement('div'); sheet.className = 'pod-sheet';
     sheet.innerHTML = `<div class="pod-head"><span class="kicker">${S.kicker}</span><h2>${S.title}</h2>${S.extra}</div>
         <div class="pod-cards">${card(1)}${card(0)}${card(2)}</div>${own}
@@ -1039,21 +1130,29 @@ function drawMap() {
     if (ghost && ghost.holder.visible) dot({ x: ghost.holder.position.x, z: ghost.holder.position.z }, 'rgba(0,229,255,.8)', 5);
     dot(player, '#fff', 7.5); dot(player, '#E10600', 5.5);
 }
-let lastHud = '';
+let lastHud = '', lastTower = '';
 function hud() {
     const units = window.getUnits ? window.getUnits() : 'mph';
     const spd = Math.abs(player.v) * (units === 'mph' ? 2.23694 : 3.6), laps = raceLaps();
     const lapShown = Math.max(1, Math.min(laps, player.lap + 1));
+    const order = mode === 'race' ? raceOrder() : [player], pos = order.indexOf(player) + 1;
     const left = mode === 'race'
-        ? `<div class="hud-pos"><b>P${positionOf(player)}</b><span>/${rivals.length + 1}</span></div><div class="hud-lap">LAP ${lapShown}/${laps}</div>`
+        ? `<div class="hud-pos"><b>P${pos}</b><span>/${rivals.length + 1}</span></div><div class="hud-lap">LAP ${lapShown}/${laps}</div>`
+        : mode === 'quali' ? `<div class="hud-pos"><b>QUALI</b></div><div class="hud-lap">${player.lap < 0 ? 'DRIVE TO THE LINE' : 'FLYING LAP'}${quali && quali.tries ? ' · GO 2' : ''}</div>`
         : `<div class="hud-pos"><b>TIME</b></div><div class="hud-lap">TRIAL · LAP ${Math.max(1, player.lap + 1)}</div>`;
+    // The little tower under your position: the car ahead, you, and the car behind (in a race), each by its driver's
+    // name. Your own row is lit and carries the YOU tag. It is only redrawn when the order changes.
+    const k0 = Math.max(0, Math.min(order.length - 3, pos - 2)), tower = order.slice(k0, k0 + 3).map((c, i) => {
+        const me = c === player, n = c.design.driver;
+        return `<div class="tw-row ${me ? 'me' : ''}">${mode === 'race' ? `<i>${k0 + i + 1}</i>` : ''}<span class="tw-dot" style="background:${c.design.paint}"></span><span class="tw-n">${escapeHtml(me ? n : n.split(' ').pop())}</span>${me ? YOU_TAG : ''}</div>`; }).join('');
+    if (tower !== lastTower) { const tw = document.getElementById('race-tower'); if (tw) tw.innerHTML = tower; lastTower = tower; }
     // This lap's clock. It starts running at the green light (not when you first reach the line): in a race the first
     // lap is timed from there; in a time trial the clock starts again as you cross the line to begin your first timed lap.
     const fromGreen = player.lap < 0 || (mode === 'race' && player.lap === 0);
-    const lapNow = race.phase === 'go' ? (fromGreen ? race.raceTime : race.raceTime - player.lapStart) : race.phase === 'done' && race.lapTimes.length ? race.lapTimes[race.lapTimes.length - 1] : 0;
+    const lapNow = mode === 'quali' && player.lap < 0 ? 0 : race.phase === 'go' ? (fromGreen ? race.raceTime : race.raceTime - player.lapStart) : race.phase === 'done' && race.lapTimes.length ? race.lapTimes[race.lapTimes.length - 1] : 0;
     // your best ever lap here, and the laps you have finished
     const done = race.lapTimes.slice(-3).map((t, i, a) => `<div class="hud-done">Lap ${race.lapTimes.length - a.length + i + 1} <b>${fmtTime(t)}</b></div>`).join('');
-    const right = `<div class="hud-time">${fmtTenths(lapNow)}</div><div class="hud-best">Best ${fmtTime(store('raceBest_' + TRACK.id, null))}</div>${done}`;
+    const right = `<div class="hud-time">${fmtTenths(lapNow)}</div><div class="hud-best">Best ${fmtTime(store('raceBest_' + TRACK.id, null))}</div>${mode === 'quali' && quali ? `<div class="hud-best pole">Pole ${fmtTime(Math.min(...quali.times.map(r => r.time ?? Infinity), quali.best ?? Infinity))}</div>` : ''}${done}`;
     const html = `<div class="hud-left">${left}</div><div class="hud-right">${right}</div><div class="hud-speed"><b>${Math.round(spd)}</b><span>${units === 'mph' ? 'MPH' : 'KM/H'}</span></div>`;
     if (html !== lastHud) { document.getElementById('race-hud').innerHTML = html; lastHud = html; }
 }
@@ -1364,7 +1463,7 @@ function frame(now) {
     const dt = Math.min(0.05, (now - lastT) / 1000 || 0) * (window.__timeScale || 1), t0 = performance.now(); if (window.__bench) window.__bench.gap.push(now - lastT);   // (__timeScale: testing only, a test lap in less time; the driving still runs in the same small steps)
     lastT = now;
     if (window.__mapView && T) { mapFrame(); return; }   // (testing: the whole circuit from above, with the OpenStreetMap outline drawn over it)
-    if (!race || race.paused) { if (sky) sky.position.copy(camera.position); drawFrame(); return; }
+    if (!race || race.paused || race.phase === 'qintro' || race.phase === 'qdone') { if (sky) sky.position.copy(camera.position); drawFrame(); return; }   // (paused, or reading a qualifying panel: a still picture)
     if (race.replay) { replayFrame(dt); return; }
     if (race.podium) { podiumFrame(dt); return; }
     if (race.phase === 'grid') { gridFrame(dt); return; }   // (the flyover: nothing drives, and no clock runs, until it is over)
@@ -1385,7 +1484,7 @@ function frame(now) {
     const steps = Math.ceil(dt / 0.01), h = dt / steps, timed = race.phase === 'go' || race.phase === 'done';
     for (let i = 0; i < steps; i++) { if (timed) race.raceTime += h; drivePlayer(h); rivals.forEach(r => driveRival(r, h)); collisions(); }
     // the replay tape: every car, ten times a second, from the start until a few seconds after you finish
-    if ((race.phase === 'go' || race.phase === 'done') && (race.tapeEnd == null || race.raceTime < race.tapeEnd)) {
+    if (mode === 'race' && (race.phase === 'go' || race.phase === 'done') && (race.tapeEnd == null || race.raceTime < race.tapeEnd)) {
         race.tapeT = (race.tapeT || 0) + dt;
         if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v, c.idx, takeLamp(c)])); race.tapeTimes.push(race.raceTime); }   // (with the exact moment of each sample: frames don't land exactly on the tenths, and playing them back as if they did made the cars judder; the place on the lap, so a car on a bridge stays on it; and the brake light)
     }
@@ -1394,6 +1493,7 @@ function frame(now) {
         while (race.recT >= 0.05) { race.recording.push(player.y ? [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3), +player.y.toFixed(2)] : [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3)]); race.recT -= 0.05; }
         updateGhost();
     }
+    if (mode === 'quali') { if (race.phase !== 'go') return; updateGhost(); }   // (your flying lap has just ended: the grid's table is up)
     updateCars(dt); placeCamera(false, dt); updateEngine();
     followSun(); tunnelLight(dt); world.update(dt); watchFrameRate(dt);
     updateEffects(dt);
@@ -1410,7 +1510,7 @@ function frame(now) {
 document.addEventListener('visibilitychange', () => {
     if (!document.hidden || !race) return;
     Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; });
-    if (race.phase !== 'done' && !race.paused) togglePause(); else stopEngine();
+    if (race.phase !== 'done' && race.phase !== 'qintro' && race.phase !== 'qdone' && !race.paused) togglePause(); else stopEngine();
 });
 function bindControls() {
     document.querySelectorAll('[data-pad]').forEach(btn => {
@@ -1446,6 +1546,7 @@ function togglePause(back = false) {
         else if (race.podium || !document.getElementById('race-result').hidden) showMenu();
         return;
     }
+    if (race.phase === 'qintro' || race.phase === 'qdone') { if (back) showMenu(); return; }   // (a qualifying panel is up: Back leaves; there is nothing to pause)
     race.paused = !race.paused;
     document.getElementById('race-pause-panel').hidden = !race.paused;
     if (race.paused) stopEngine(); else startEngine();   // the engine comes back when you carry on racing
@@ -1460,7 +1561,10 @@ function showStage() {
     document.getElementById('race-pause-panel').hidden = true;
     // (in a championship, leaving a race part-way doesn't lose the season: the pause box says so)
     const note = document.getElementById('race-pause-note'), quit = document.querySelector('#race-pause-panel [data-race="menu"]');
-    if (note) note.hidden = !champ; if (quit) quit.textContent = champ ? 'Save and quit' : 'Quit to menu';
+    if (note) { note.hidden = !champ; note.textContent = mode === 'quali' ? 'Your season is saved. If you quit now, qualifying starts again next time.' : gridOrder ? 'Your season and your place on the grid are saved. If you quit now, this race starts again from the grid next time.' : 'Your season is saved. If you quit now, this race starts again from the grid next time.'; }
+    if (quit) quit.textContent = champ ? 'Save and quit' : 'Quit to menu';
+    const skip = document.getElementById('race-qskip'); if (skip) skip.hidden = mode !== 'quali';
+    const st = document.getElementById('race-stage'); st.classList.toggle('quali-on', mode === 'quali'); lastTower = '';
     document.body.classList.add('racing');
     resize(); setupRace(); startEngine();
 }
@@ -1468,7 +1572,7 @@ function showStage() {
 function showMenu() {
     const finished = !!(race && race.phase === 'done');   // (leaving after the finish, or giving up part-way)
     if (window.stopLongSounds) window.stopLongSounds();
-    stopEngine(); leavePodium(); endGridCam(true); race = null;
+    stopEngine(); leavePodium(); endGridCam(true); race = null; quali = null;
     document.getElementById('race-stage').hidden = true;
     document.body.classList.remove('racing');
     if (raf) { cancelAnimationFrame(raf); raf = null; }
@@ -1600,6 +1704,8 @@ function init() {
     return true;
 }
 // Start a race or a time trial. opts: { circuit (its data), mode: 'race' | 'trial', laps, difficulty, weather, team, onExit }
+// A race can begin with qualifying (quali: true); onGrid(order, { pos, time, skipped }) is then told the grid (team
+// numbers, pole first) as soon as it is set. Or it can be given a grid that is already known (grid: [...]).
 // onExit(finished) is called on leaving: finished is true after the chequered flag, false if the race was given up.
 // A championship race also passes champ: { round, of, field (the ten rivals' team numbers, front of the grid first),
 // points (for 1st, 2nd, ...), onFinish(rows) }: onFinish gets [{ team, total, best }] in finishing order, at the flag.
@@ -1611,6 +1717,9 @@ export function start(opts) {
         document.getElementById('race-stage').addEventListener('click', e => {
             const b = e.target.closest('button'); if (!b) return;
             if (b.dataset.race === 'again') { stopReplay(); showStage(); }
+            if (b.dataset.race === 'qgo' || b.dataset.race === 'qretry') { if (quali && (b.dataset.race === 'qgo' || quali.tries < QUALI_TRIES)) qualiGo(); return; }
+            if (b.dataset.race === 'qskip') { if (quali && race && race.phase !== 'qdone') qualiDone(null, true); return; }
+            if (b.dataset.race === 'qrace') { qualiToRace(); return; }
             if (b.dataset.race === 'menu' || b.dataset.race === 'next') { stopReplay(); showMenu(); }
             if (b.dataset.race === 'replay') startReplay();
             if (b.dataset.race === 'replay-exit') { stopReplay(); document.getElementById('race-result').hidden = false; }
@@ -1633,7 +1742,10 @@ export function start(opts) {
     document.getElementById('race-engine').classList.toggle('active', engineOn);
     document.getElementById('race-help').classList.toggle('active', help);
     champ = opts.mode !== 'trial' && opts.champ ? opts.champ : null;
-    mode = opts.mode === 'trial' ? 'trial' : 'race';
+    // qualifying first (opts.quali), unless the grid is already known (opts.grid: team numbers, pole first)
+    gridOrder = opts.mode !== 'trial' && validGrid(opts.grid) ? opts.grid.slice() : null;
+    onGrid = opts.mode !== 'trial' && typeof opts.onGrid === 'function' ? opts.onGrid : null;
+    mode = opts.mode === 'trial' ? 'trial' : opts.quali && !gridOrder ? 'quali' : 'race';
     lapsChosen = opts.laps || opts.circuit.laps || 3;
     difficulty = DIFF[opts.difficulty] ? opts.difficulty : 'medium';
     playerTeam = Math.max(0, Math.min(TEAMS.length - 1, opts.team ?? 5));
@@ -1653,7 +1765,9 @@ export function stop() { if (race) showMenu(); }
 // for testing: drive automatically along the racing line
 export function autopilot(on) { window.__autopilot = on; }
 export function suspDebug() { const s = player && player.susp; return s && { pitch: +s.pitch.toFixed(4), roll: +s.roll.toFixed(4), heave: +s.heave.toFixed(4), heat: +s.heat.toFixed(2), bumps: s.bumps.map(b => +b.toFixed(3)), parts: s.corners.length || (s.links ? s.links.length : 0) }; }
-export function debug() { return { mode, phase: race && race.phase, raceT: race && +race.t.toFixed(2), cam: camMode, lap: player && player.lap, idx: player && player.idx, v: player && player.v, pos: player && positionOf(player), best: player && player.best, rivals: rivals.map(r => [r.lap, Math.round(r.v)]), rivalLat: rivals.map(r => [+r.lat.toFixed(2), +r.latV.toFixed(2)]), trackLen, N, trees: world && world.trees, ghost: !!(ghost && ghost.holder.visible), slip: player && player.slip, time: timeOfDay, quality, shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, grassPct: player ? Math.round(100 * (player.grassTime || 0) / (player.driveTime || 1)) : 0, wallHits: player && (player.wallHits || 0), slideTime: player && +(player.slideTime || 0).toFixed(1), raceTime: race && race.raceTime }; }
+export function qualiForTest() { return quali && { ...quali, order: qualiOrder(), grid: gridOrder }; }   // testing only
+export function simLapForTest(f) { return simLap(f); }   // testing only
+export function debug() { return { mode, grid: gridOrder, phase: race && race.phase, raceT: race && +race.t.toFixed(2), cam: camMode, lap: player && player.lap, idx: player && player.idx, v: player && player.v, pos: player && positionOf(player), best: player && player.best, rivals: rivals.map(r => [r.lap, Math.round(r.v)]), rivalLat: rivals.map(r => [+r.lat.toFixed(2), +r.latV.toFixed(2)]), trackLen, N, trees: world && world.trees, ghost: !!(ghost && ghost.holder.visible), slip: player && player.slip, time: timeOfDay, quality, shadows: renderer.shadowMap.enabled, calls: renderer.info.render.calls, tris: renderer.info.render.triangles, grassPct: player ? Math.round(100 * (player.grassTime || 0) / (player.driveTime || 1)) : 0, wallHits: player && (player.wallHits || 0), slideTime: player && +(player.slideTime || 0).toFixed(1), raceTime: race && race.raceTime }; }
 export function setHelp(on) { help = on; }
 // testing only: bump car k (0 = you, 1 = the first rival ...) on its 'front', 'rear', 'left' or 'right', as hard as sev (0 to 1)
 export function testHit(k = 0, where = 'front', sev = 0.8, colour = '#FFB300') {

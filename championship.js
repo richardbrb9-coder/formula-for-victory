@@ -9,13 +9,15 @@ const WEATHER_ICON = { sunny: '☀️', cloudy: '☁️', rain: '🌧️' };
 // what a new season starts with: the choices made last time, or your quick-race team on Easy
 const champDraft = (() => {
     const d = store('champSetup', {}) || {};
-    return { team: Number.isInteger(d.team) && TEAMS[d.team] ? d.team : opts.team, laps: S.LAPS.includes(d.laps) ? d.laps : 3, difficulty: S.DIFFICULTIES.includes(d.difficulty) ? d.difficulty : 'easy' };
+    return { team: Number.isInteger(d.team) && TEAMS[d.team] ? d.team : opts.team, laps: S.LAPS.includes(d.laps) ? d.laps : 3, difficulty: S.DIFFICULTIES.includes(d.difficulty) ? d.difficulty : 'easy', quali: d.quali === true };
 })();
 let champTab = 'drivers', champFresh = false, champSure = false;   // which table is showing; "start a new season" was asked for; ... and asked for twice
 let champCircuits = null;                                          // the list of circuits (for their names and flags)
 let champShown = '';                                               // which of the screens is up: 'setup', 'hub', 'after' or 'final'
 
-const nameOf = (s, id) => id === s.team ? FFV.YOU : FFV.teamById(id).driver;
+// every driver by name; yours carries a small YOU tag (youOf gives the tag's HTML, or nothing)
+const nameOf = (s, id) => FFV.teamById(id).driver;
+const youOf = (s, id) => id === s.team ? FFV.youTag : '';
 const dot = id => FFV.badge(id);   // (the team's colour dot, or a family's own logo for it: see myteams.js)
 const circuitOf = id => (champCircuits || []).find(c => c.id === id) || { id, name: id, flag: '', country: '' };
 const placeClass = p => p <= 3 ? 'pl' + p : '';
@@ -31,8 +33,8 @@ function standingsTable(s, kind, { moves = false } = {}) {
     const head = kind === 'teams' ? 'Team' : 'Driver';
     const body = rows.map(r => {
         const t = FFV.teamById(r.id), who = kind === 'teams'
-            ? `${escapeHtml(t.team)} <small>${escapeHtml(nameOf(s, r.id))}</small>`
-            : `${escapeHtml(nameOf(s, r.id))} <small>${escapeHtml(t.team)}</small>`;
+            ? `${escapeHtml(t.team)}${youOf(s, r.id)} <small>${escapeHtml(nameOf(s, r.id))}</small>`
+            : `${escapeHtml(nameOf(s, r.id))}${youOf(s, r.id)} <small>${escapeHtml(t.team)}</small>`;
         const places = s.rounds.map((_, i) => `<td class="rd ${r.places[i] ? placeClass(r.places[i]) : ''}">${r.places[i] || '·'}</td>`).join('');
         return `<tr class="${r.you ? 'me' : ''}"><td class="ps">${r.pos}</td>${moveCell(r, showMoves)}<td class="nm">${dot(r.id)}${who}</td>${places}<td class="gn">${moves && n ? (r.gained ? '+' + r.gained : '') : ''}</td><td class="pt">${r.pts}</td></tr>`;
     }).join('');
@@ -84,7 +86,7 @@ function renderChamp(view) {
 function renderChampSetup(el, old) {
     const d = champDraft, t = TEAMS[d.team];
     const row = (key, list) => `<div class="opts">${list.map(([v, text]) => `<button class="opt ${d[key] === v ? 'active' : ''}" data-draft="${key}" data-val="${v}" aria-pressed="${d[key] === v}">${text}</button>`).join('')}</div>`;
-    const tmp = S.newSeason({ team: t.id, laps: d.laps, difficulty: d.difficulty });
+    const tmp = S.newSeason({ team: t.id, laps: d.laps, difficulty: d.difficulty, quali: d.quali });
     el.innerHTML = `
         <div class="champ-head"><div><h1><span class="kicker">Championship</span>A new season</h1>
             <p class="subtitle">Five races, one on each circuit, against the same ten drivers all season. Score points in every race: most points wins the trophy.</p></div></div>
@@ -97,6 +99,9 @@ function renderChampSetup(el, old) {
                 ${row('laps', [[2, '2 laps'], [3, '3 laps'], [5, '5 laps']])}
                 <p class="b-label">Rivals</p>
                 ${row('difficulty', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']])}
+                <p class="b-label">Qualifying before each race</p>
+                ${row('quali', [[false, 'Off'], [true, '⏱ On']])}
+                <p class="small opt-note">${d.quali ? 'On: before every race you drive one flying lap on your own. The quicker your lap, the nearer the front you start.' : 'Off: you start every race at the back of the grid.'}</p>
                 <div class="mode-btns"><button class="big-btn" data-champ="start">🏁 Start the season</button>${old ? '<button class="act-btn ghost" data-champ="keep">Keep my old season</button>' : ''}</div>
                 <p class="small" style="margin-top:10px">${old ? 'Starting a new season wipes the old one.' : 'Your season is saved after every race, so you can stop and carry on another day.'}</p>
             </div>
@@ -109,11 +114,14 @@ function renderChampSetup(el, old) {
         </div>`;
 }
 function renderChampHub(el, s) {
-    const n = s.results.length, c = circuitOf(s.rounds[n]);
+    const n = s.results.length, c = circuitOf(s.rounds[n]), g = s.grid, gp = g ? g.order.indexOf(s.team) + 1 : 0;
+    // with qualifying: either it is still to do, or its grid is saved and the race starts from it
+    const go = !s.quali ? `🏁 Race at ${escapeHtml(c.name)}` : g ? `🏁 Race at ${escapeHtml(c.name)}: you start ${ordinalWord(gp)}` : `⏱ Qualifying at ${escapeHtml(c.name)}`;
+    const qnote = !s.quali ? '' : g ? ` Qualifying is done: you start ${gp === 1 ? 'on pole position' : ordinalWord(gp)}${g.skipped ? ' (you skipped it)' : g.time != null ? ` with a lap of ${fmtTime(g.time)}` : ''}.` : ' Qualifying comes first: one flying lap for your place on the grid.';
     el.innerHTML = `
         <div class="champ-head"><div><h1><span class="kicker">Championship · the season so far</span>Race ${n + 1} of ${s.rounds.length}: ${c.flag} ${escapeHtml(c.name)}</h1>
-            <p class="subtitle">${standingLine(s)} ${s.laps} laps a race, ${s.difficulty} rivals, driving for ${escapeHtml(FFV.teamById(s.team).team)}.</p></div>
-            <div class="champ-go"><button class="big-btn" data-champ="race">🏁 Race at ${escapeHtml(c.name)}</button></div></div>
+            <p class="subtitle">${standingLine(s)} ${s.laps} laps a race, ${s.difficulty} rivals, driving for ${escapeHtml(FFV.teamById(s.team).team)}.${qnote}</p></div>
+            <div class="champ-go"><button class="big-btn" data-champ="race">${go}</button></div></div>
         <div class="champ-grid">
             <div class="panel"><h2>The five races</h2>${calendar(s)}<h2 class="gap">Points for each race</h2>${pointsKey()}</div>
             ${tablesPanel(s, { moves: false })}
@@ -123,11 +131,11 @@ function renderChampHub(el, s) {
 function renderChampAfter(el, s) {
     const n = s.results.length, r = s.results[n - 1], c = circuitOf(r.circuit), mine = r.order.indexOf(s.team) + 1, pts = S.pointsFor(mine - 1), done = S.finished(s);
     const nextC = done ? null : circuitOf(s.rounds[n]);
-    const result = r.order.map((id, i) => `<tr class="${id === s.team ? 'me' : ''}"><td class="ps">${i + 1}</td><td class="nm">${dot(id)}${escapeHtml(nameOf(s, id))} <small>${escapeHtml(FFV.teamById(id).team)}</small></td><td class="pt gain">${S.pointsFor(i) ? '+' + S.pointsFor(i) : ''}</td></tr>`).join('');
+    const result = r.order.map((id, i) => `<tr class="${id === s.team ? 'me' : ''}"><td class="ps">${i + 1}</td><td class="nm">${dot(id)}${escapeHtml(nameOf(s, id))}${youOf(s, id)} <small>${escapeHtml(FFV.teamById(id).team)}</small></td><td class="pt gain">${S.pointsFor(i) ? '+' + S.pointsFor(i) : ''}</td></tr>`).join('');
     el.innerHTML = `
         <div class="champ-head"><div><h1><span class="kicker">Race ${n} of ${s.rounds.length} · ${c.flag} ${escapeHtml(c.name)}</span>${mine === 1 ? 'You won the race!' : `You finished ${ordinalWord(mine)}`} <span class="gain-badge">${pts ? '+' + pts : '0'} point${pts === 1 ? '' : 's'}</span></h1>
             <p class="subtitle">${standingLine(s)}</p></div>
-            <div class="champ-go">${done ? '<button class="big-btn gold" data-champ="final">🏆 See the champion</button>' : `<button class="big-btn" data-champ="race">Next race: ${escapeHtml(nextC.name)} ›</button><button class="act-btn ghost" data-champ="hub">Season so far</button>`}</div></div>
+            <div class="champ-go">${done ? '<button class="big-btn gold" data-champ="final">🏆 See the champion</button>' : `<button class="big-btn" data-champ="race">${s.quali ? 'Next: qualifying at' : 'Next race:'} ${escapeHtml(nextC.name)} ›</button><button class="act-btn ghost" data-champ="hub">Season so far</button>`}</div></div>
         <div class="champ-grid">
             <div class="panel"><h2>Race result</h2><table class="champ-table season-table"><thead><tr><th></th><th>Driver</th><th class="pt">Points</th></tr></thead><tbody>${result}</tbody></table></div>
             ${tablesPanel(s, { moves: true })}
@@ -154,7 +162,7 @@ function renderChampFinal(el, s, celebrate) {
 function celebrateSeason(s, pos) {
     playSound(pos === 1 ? 'fanfare' : pos <= 3 ? 'bigcheer' : 'cheer');
     startParty(pos === 1 ? 9 : pos <= 3 ? 5 : 3, pos === 1 ? 170 : 90);
-    if (!s.celebrated) { s.celebrated = true; S.save(s); }
+    if (!s.celebrated) { s.celebrated = true; S.save(s); if (pos === 1) FFV.myStats.add('titles'); }   // (a title for your own Driver Card, counted once)
     // remember the best you have ever done at each level
     const best = store('champBest', {}) || {}, old = best[s.difficulty];
     if (!Number.isInteger(old) || pos < old) { best[s.difficulty] = pos; storeSet('champBest', best); }
@@ -217,6 +225,10 @@ function champRace() {
     loadCircuit(entry).then(data => {
         const mine = FFV.teamIndex(s.team);
         startRace('race', {
+            // qualifying, if this season has it: unless its grid for this race is already saved (you left after qualifying,
+            // or part-way through the race), in which case the race starts straight from that grid
+            quali: s.quali && !s.grid, grid: s.quali && s.grid ? s.grid.order.map(FFV.teamIndex) : null,
+            onGrid: (order, info) => { const now = S.load(); if (now && S.setGrid(now, round, order.map(i => TEAMS[i] && TEAMS[i].id), info || {})) S.save(now); },
             circuit: data, laps: s.laps, difficulty: s.difficulty, weather: (info && info.weather) || 'sunny', team: mine,
             champ: {
                 round: round + 1, of: s.rounds.length, points: S.POINTS, field: S.grid(s).map(FFV.teamIndex),
@@ -235,12 +247,12 @@ function champRace() {
 document.getElementById('champ').addEventListener('click', e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.draft) {
-        const k = b.dataset.draft; champDraft[k] = k === 'difficulty' ? b.dataset.val : +b.dataset.val;
+        const k = b.dataset.draft; champDraft[k] = k === 'difficulty' ? b.dataset.val : k === 'quali' ? b.dataset.val === 'true' : +b.dataset.val;
         storeSet('champSetup', champDraft); renderChamp(); return;
     }
     switch (b.dataset.champ) {
         case 'tab': champTab = b.dataset.val === 'teams' ? 'teams' : 'drivers'; { const y = window.scrollY; renderChamp(champShown === 'after' ? 'after' : undefined); window.scrollTo(0, y); } break;
-        case 'start': { const s = S.newSeason({ team: TEAMS[champDraft.team].id, laps: champDraft.laps, difficulty: champDraft.difficulty }); S.save(s); champFresh = false; champTab = 'drivers'; renderChamp(); window.scrollTo(0, 0); break; }
+        case 'start': { const s = S.newSeason({ team: TEAMS[champDraft.team].id, laps: champDraft.laps, difficulty: champDraft.difficulty, quali: champDraft.quali }); S.save(s); champFresh = false; champTab = 'drivers'; renderChamp(); window.scrollTo(0, 0); break; }
         case 'keep': champFresh = false; renderChamp(); break;
         case 'new': if (champSure) { champFresh = true; champSure = false; renderChamp(); window.scrollTo(0, 0); } else { champSure = true; renderChamp('keep'); } break;
         case 'new-now': champFresh = true; renderChamp(); window.scrollTo(0, 0); break;

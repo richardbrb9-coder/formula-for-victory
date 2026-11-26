@@ -1388,16 +1388,20 @@ function detailTexture(s90 = false) {
 }
 // The colours of the interior and the small outside trim, one small strip: every such part is painted from it, so they are
 // all one material (and all hidden together in the driver's-seat view, where the cockpit model takes over).
-// 3 = helmet, 5 = accent (seat stripes), 8 = helmet stripe
+// 3 = helmet, 5 = accent (seat stripes), 8 = helmet stripe, 16 = the helmet's ring (its third colour)
 // 10, 11 = pale and darker tan leather (the Longtail's and the 60s GT's seats), 12 = copper, 13 = electric blue (the Electric's screen and seat stripe)
 // 14, 15 = dark and light polished wood (the 60s GT's dashboard and steering wheel rim)
-const INTERIOR = ['#17191d', '#2a2d33', '#050506', 'helmet', '#0c0d10', 'accent', '#3a3f47', '#c3cad4', 'stripe', '#7a828d', '#cfb48c', '#a98a62', COPPER, EVBLUE, '#5a3417', '#a8703a'];
+const INTERIOR = ['#17191d', '#2a2d33', '#050506', 'helmet', '#0c0d10', 'accent', '#3a3f47', '#c3cad4', 'stripe', '#7a828d', '#cfb48c', '#a98a62', COPPER, EVBLUE, '#5a3417', '#a8703a', 'ring'];
 function interiorTexture(d) {
     const c = document.createElement('canvas'); c.width = INTERIOR.length * 8; c.height = 8; const x = c.getContext('2d');
     // the helmet takes the brake calliper colour (a strong colour the builder chooses), or white if that is too dark to see
     const n = parseInt(String(d.caliper || '').slice(1), 16) || 0, lum = (0.3 * (n >> 16 & 255) + 0.59 * (n >> 8 & 255) + 0.11 * (n & 255)) / 255;
-    const helmet = lum < 0.3 ? '#f4f6f8' : d.caliper, stripe = lum < 0.3 || lum > 0.85 ? '#e10600' : '#f4f6f8';
-    INTERIOR.forEach((col, i) => { x.fillStyle = { helmet, stripe, accent: d.caliper }[col] || col; x.fillRect(i * 8, 0, 8, 8); });
+    let helmet = lum < 0.3 ? '#f4f6f8' : d.caliper, stripe = lum < 0.3 || lum > 0.85 ? '#e10600' : '#f4f6f8', ring = stripe;
+    // a racing team's driver (d.helmet: the team's three colours) wears them: the shell in the main colour, a broad stripe
+    // over the top in the second, and a ring round the crown in the third. All from this one strip: nothing extra to draw.
+    const own = Array.isArray(d.helmet) && d.helmet.length === 3 && d.helmet.every(c => /^#[0-9a-f]{6}$/i.test(c)) ? d.helmet : null;
+    if (own) [helmet, stripe, ring] = own;
+    INTERIOR.forEach((col, i) => { x.fillStyle = { helmet, stripe, ring, accent: d.caliper }[col] || col; x.fillRect(i * 8, 0, 8, 8); });
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; return t;
 }
 // The extra detail on the modern hypercar. Everything is placed from the body's own curves, so it follows the sliders.
@@ -1530,6 +1534,15 @@ function helmetedDriver(part, xS, hy, z) {
     const lid = part(new THREE.SphereGeometry(R, 20, 14), 3); lid.scale.set(1.12, 1, 0.94); lid.position.set(xS, hy, z);
     const visor = part(new THREE.SphereGeometry(R * 1.04, 20, 8, Math.PI * 0.48, Math.PI * 1.04, Math.PI * 0.3, Math.PI * 0.27), 2); visor.scale.set(1.12, 1, 0.94); visor.position.set(xS, hy, z);   // a wide black visor band
     const band = part(new THREE.TorusGeometry(R * 0.985, 0.02, 6, 24, Math.PI), 8); band.scale.set(1.12, 1, 1.6); band.position.set(xS, hy, z);   // a broad stripe over the top of the helmet, front to back
+    // a ring round the crown, above the visor, in the helmet's third colour (it lies under the stripe where they cross)
+    const ring = part(new THREE.TorusGeometry(R * 0.775, 0.017, 5, 20), 16); ring.rotation.x = Math.PI / 2; ring.scale.set(1.12, 0.94, 1.5); ring.position.set(xS, hy + R * 0.62, z);
+}
+// A helmet on its own (with the top of the driver's shoulders), for the Driver Cards' pictures: the very same helmet the
+// car's driver wears, in the same colours. Returns { group, dispose }.
+export function helmetModel(design) {
+    const group = new THREE.Group(), mats = {}, { part } = interiorKit(group, design, mats, false);
+    helmetedDriver(part, 0, 0, 0);
+    return { group, dispose() { group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); mats.interior.map.dispose(); mats.interior.dispose(); } };
 }
 // The extra detail on the 90s supercar: the famous seating (the driver in the middle, a passenger seat set back on each side),
 // mirrors on stalks, a roof intake you can see into, a meshed nose intake, indicators, wiper and badge.

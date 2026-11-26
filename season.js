@@ -5,7 +5,9 @@
 // 'ffv_champ', so you can stop and carry on another day.
 //
 // What is saved: { v, team, laps, difficulty, rounds: [circuit ids], results: [{ circuit, order: [team ids, winner
-// first], time, best }], started, celebrated }. The points and the tables are never saved: they are always worked out again from the
+// first], time, best }], started, celebrated, quali, grid }. quali: true if the season has qualifying before each race.
+// grid: { round, order: [team ids, pole first] }, the grid that qualifying set for the NEXT race (kept so that leaving
+// after qualifying, or part-way through that race, does not lose your place; it is dropped once the race is recorded). The points and the tables are never saved: they are always worked out again from the
 // finishing orders, so they cannot get out of step. A race only counts once its finishing order has been recorded (at
 // the chequered flag); a race you leave part-way was never recorded, so it simply starts again.
 'use strict';
@@ -21,8 +23,9 @@
     const LAPS = [2, 3, 5], DIFFICULTIES = ['easy', 'medium', 'hard'];
     const ids = () => FFV.TEAMS.map(t => t.id);
 
-    function newSeason({ team, laps, difficulty }) {
+    function newSeason({ team, laps, difficulty, quali }) {
         return { v: VERSION, team: ids().includes(team) ? team : ids()[0], laps: LAPS.includes(laps) ? laps : 3, difficulty: DIFFICULTIES.includes(difficulty) ? difficulty : 'easy',
+            quali: quali === true,   // (a season saved before qualifying existed has none: every race starts from the back, as it always did)
             rounds: ROUNDS.map(r => r.circuit), results: [], started: Date.now() };
     }
     // Check a saved season, and mend it if it can be mended. Anything that is not a season at all gives null; a season
@@ -31,7 +34,7 @@
         if (!s || typeof s !== 'object' || Array.isArray(s)) return null;
         const all = ids(), team = Number.isInteger(s.team) && FFV.TEAMS[s.team] ? FFV.TEAMS[s.team].id : s.team;   // (a number: the team's place in the list)
         if (!all.includes(team)) return null;
-        const out = newSeason({ team, laps: +s.laps, difficulty: s.difficulty });
+        const out = newSeason({ team, laps: +s.laps, difficulty: s.difficulty, quali: s.quali });
         if (Number.isFinite(s.started)) out.started = s.started;
         const circuits = ROUNDS.map(r => r.circuit);
         // (an old save might list the circuits in another order, or fewer of them: keep its order for the ones we still have)
@@ -45,6 +48,10 @@
             }
         }
         if (s.celebrated === true && out.results.length >= out.rounds.length) out.celebrated = true;   // (the champion's party has been seen)
+        // a saved grid only counts if it is for the very next race and lists every team exactly once
+        const g = s.grid;
+        if (out.quali && g && typeof g === 'object' && g.round === out.results.length && out.results.length < out.rounds.length && Array.isArray(g.order) && g.order.length === all.length && all.every(id => g.order.includes(id)))
+            out.grid = { round: g.round, order: g.order.slice(), time: Number.isFinite(g.time) ? g.time : null, skipped: g.skipped === true };
         return out;
     }
     function load() { try { return check(JSON.parse(localStorage.getItem(KEY))); } catch (e) { return null; } }
@@ -63,6 +70,7 @@
         if (!clean.length) return false;
         for (const id of all) if (!clean.includes(id)) clean.push(id);
         s.results.push({ circuit: s.rounds[round], order: clean, time: Number.isFinite(extra.time) ? extra.time : null, best: Number.isFinite(extra.best) ? extra.best : null });
+        delete s.grid;   // (that race's grid has done its job)
         return true;
     }
     // The table after 'upto' races (all of them, if not given). Level on points? Whoever has more wins is ahead, then more
@@ -95,5 +103,12 @@
         return FFV.TEAMS.filter(t => t.id !== s.team).map(t => ({ id: t.id, score: t.pace + (rand() - 0.5) * 0.9 })).sort((a, b) => b.score - a.score).map(t => t.id);
     }
 
-    FFV.season = { VERSION, KEY, POINTS, ROUNDS, LAPS, DIFFICULTIES, newSeason, check, load, save, clear, finished, roundInfo, pointsFor, record, standings, standingsWithMoves, grid };
+    // Qualifying has set the grid for race 'round' (team ids, pole first): remembered, for that race only.
+    function setGrid(s, round, order, extra = {}) {
+        const all = ids();
+        if (!s.quali || round !== s.results.length || finished(s) || !Array.isArray(order) || order.length !== all.length || !all.every(id => order.includes(id))) return false;
+        s.grid = { round, order: order.slice(), time: Number.isFinite(extra.time) ? extra.time : null, skipped: extra.skipped === true };
+        return true;
+    }
+    FFV.season = { VERSION, KEY, POINTS, ROUNDS, LAPS, DIFFICULTIES, newSeason, check, load, save, clear, finished, roundInfo, pointsFor, record, standings, standingsWithMoves, grid, setGrid };
 })();
