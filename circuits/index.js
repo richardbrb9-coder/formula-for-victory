@@ -7,7 +7,8 @@ export const CIRCUITS = [
       load: () => import('./silverstone.js').then(m => m.SILVERSTONE) },
     { id: 'monaco', name: 'Monaco', country: 'Monaco', flag: '🇲🇨', km: 3.337, blurb: 'Tight streets between the walls: up the hill to the casino, round the slowest hairpin in racing, through the tunnel and along the harbour.',
       load: () => import('./monaco.js').then(m => m.MONACO) },
-    { id: 'suzuka', name: 'Suzuka', country: 'Japan', flag: '🇯🇵', km: 5.807, blurb: 'A figure of eight: the track crosses over itself on a bridge.', soon: true },
+    { id: 'suzuka', name: 'Suzuka', country: 'Japan', flag: '🇯🇵', km: 5.807, blurb: 'A figure of eight in the wooded hills: the snaking S Curves, the Hairpin, Spoon, and a bridge where the track crosses over itself.',
+      load: () => import('./suzuka.js').then(m => m.SUZUKA) },
     { id: 'lasvegas', name: 'Las Vegas', country: 'USA', flag: '🇺🇸', km: 6.201, blurb: 'A night race down a famous street of lights.', soon: true }
 ];
 // a small picture of a circuit's shape for the menus (only for circuits that are ready)
