@@ -383,29 +383,161 @@ export function monacoScenery(ctx) {
     //  THE HARBOUR: yachts moored stern-on to the quay, bigger ones out in the middle, and two harbour walls
     // =================================================================
     {
-        const white = [0.97, 0.97, 0.96], navy = [0.1, 0.16, 0.3], teak = [0.74, 0.58, 0.4], glass = [0.09, 0.13, 0.19];
-        const yacht = (x, z, heading, len) => {
-            const beam = len * 0.23, free = len * 0.075 + 0.6, c = Math.cos(heading), s = Math.sin(heading), P = (lx, y, lz) => [x + lx * c + lz * s, y, z - lx * s + lz * c], hull = Math.random() < 0.2 ? navy : white;
-            const sec = [[-0.5, 0.5], [-0.1, 0.5], [0.27, 0.36], [0.5, 0.02]].map(([u, hb]) => ({ x: u * len, hb: hb * beam }));
-            for (let k = 0; k < 3; k++) for (const sd of [1, -1]) {
-                const a = sec[k], b = sec[k + 1], rise = k === 2 ? len * 0.03 : 0;
-                boats.add(P(a.x, -0.5, sd * a.hb * 0.72), P(b.x, -0.5, sd * b.hb * 0.72), P(a.x, free, sd * a.hb), P(b.x, free + rise, sd * b.hb), undefined, hull);
-                if (sd > 0) boats.add(P(a.x, free, -a.hb), P(a.x, free, a.hb), P(b.x, free + rise, -b.hb), P(b.x, free + rise, b.hb), undefined, k === 0 ? teak : white);
+        // (the harbour is laid out from its own run of chance numbers: the same harbour, and the same amount to draw, every time)
+        let seed = 7193; const rnd = () => { seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        const H = (lo, hi) => lo + rnd() * (hi - lo), one = list => list[Math.floor(rnd() * list.length)], rich = dens > 0.5;
+        const white = [0.97, 0.97, 0.96], pale = [0.86, 0.87, 0.86], cream = [0.93, 0.89, 0.8], navy = [0.08, 0.13, 0.27], slate = [0.2, 0.22, 0.25], silver = [0.62, 0.66, 0.7], teak = [0.72, 0.55, 0.37];
+        const red = [0.55, 0.1, 0.1], black = [0.07, 0.07, 0.08], teal = [0.08, 0.34, 0.4], rubber = [0.2, 0.21, 0.23];
+        const tone = (c, k) => [c[0] * k, c[1] * k, c[2] * k], mixP = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+        // One yacht, built in its own measurements [along (bow +), up, across] and baked into the one piece all the boats
+        // share. How much is modelled depends on the graphics setting and on how close it will be seen: Low gets the hull,
+        // the decks and the windows; the ones by the quay also get rails, steps and a fuller radar arch. The soft shading
+        // is in the colours: darker under each deck's overhang, on the decks beneath and at the foot of the walls.
+        const yacht = (x, z, heading, len, o = {}) => {
+            const det = !rich ? 0 : o.near ? 2 : 1, sail = !!o.sail, c = Math.cos(heading), s = Math.sin(heading), P = p => [x + p[0] * c + p[2] * s, p[1], z - p[0] * s + p[2] * c];
+            // a four-cornered piece (lower edge a-b, upper edge e-f); col: one colour, or [the lower edge's, the upper edge's]
+            const q = (a, b, e, f, col) => boats.add(P(a), P(b), P(e), P(f), undefined, Array.isArray(col[0]) ? [col[0], col[0], col[1], col[1]] : col);
+            const flat = (a, b, y, col) => q([a[0], y, -a[1]], [a[0], y, a[1]], [b[0], y, -b[1]], [b[0], y, b[1]], col);   // a level strip right across, between two [along, half-width] points
+            const block = (x0, x1, y0, y1, z0, z1, col, top = col, ends = true) => {
+                q([x0, y0, z0], [x1, y0, z0], [x0, y1, z0], [x1, y1, z0], col); q([x0, y0, z1], [x1, y0, z1], [x0, y1, z1], [x1, y1, z1], col);
+                if (ends) { q([x0, y0, z0], [x0, y0, z1], [x0, y1, z0], [x0, y1, z1], col); q([x1, y0, z0], [x1, y0, z1], [x1, y1, z0], [x1, y1, z1], col); }
+                if (top) q([x0, y1, z0], [x1, y1, z0], [x0, y1, z1], [x1, y1, z1], top);
+            };
+            const ball = (cx, cy, cz, r, seg) => {
+                const ring = up => Array.from({ length: seg + 2 }, (_, k) => { const a = k / seg * 6.2832; return [cx + Math.cos(a) * r * 0.866, cy + up * r * 0.5, cz + Math.sin(a) * r * 0.866]; }), lo = ring(-1), hi = ring(1);
+                for (let k = 0; k < seg; k++) q(lo[k], lo[k + 1], hi[k], hi[k + 1], [tone(white, 0.8), white]);
+                for (let k = 0; k < seg; k += 2) { q(hi[k], hi[k + 1], [cx, cy + r, cz], hi[k + 2], white); q(lo[k], lo[k + 1], [cx, cy - r, cz], lo[k + 2], tone(white, 0.7)); }
+            };
+            const pickHull = rnd(), hull = o.hull || (pickHull < 0.6 ? white : pickHull < 0.75 ? navy : pickHull < 0.86 ? slate : pickHull < 0.94 ? cream : silver);
+            const boot = hull === white ? one([navy, navy, black, red, teal]) : hull === cream ? one([navy, teal]) : hull === silver ? black : red, glass = one([[0.06, 0.09, 0.14], [0.05, 0.07, 0.1], [0.07, 0.12, 0.17]]);
+            const top = hull === cream ? [0.96, 0.94, 0.9] : white;
+
+            // --- the hull: a fine raked bow, flared sides, a dark line at the water, and the deck set down inside a low bulwark ---
+            const hb = (sail ? 1.3 + len * 0.19 : 1.7 + len * 0.14) / 2, free = sail ? 0.75 + len * 0.03 : 0.9 + len * 0.045, rise = len * (sail ? 0.016 : 0.03), bul = sail ? 0.12 : Math.min(0.55, free * 0.28);
+            const n = sail || len < 17 ? 1 : len < 30 ? 2 : len < 52 ? 3 : 4, heli = n === 4 && len > 56;
+            const ua = sail ? -0.12 : n === 1 ? -0.2 : -0.3, uf = (sail ? 0.16 : n === 1 ? 0.22 : n === 2 ? 0.2 : heli ? 0.08 : 0.16) + H(-0.015, 0.015), rk = sail ? 0.6 : 1;
+            // (each station: how far along, half-width, how much of the bow's rise, how far the waterline lies behind the deck edge)
+            const ST = (det ? [[-0.43, 0.86, 0, 0], [ua, 0.97, 0, 0], [0.08, 1, 0.06, 0.005], [0.3, 0.74, 0.4, 0.03], [0.42, 0.36, 0.75, 0.065], [0.5, 0.02, 1, 0.1]] : [[-0.43, 0.86, 0, 0], [ua, 0.98, 0, 0], [0.25, 0.84, 0.3, 0.02], [0.5, 0.02, 1, 0.1]])
+                .map(([u, f, r, k]) => { const t = [u * len, free + r * rise, f * hb], w = [(u - k * rk) * len, 0, f * hb * 0.86]; return { t, w, lo: [w[0], -0.3, w[2]], b: mixP(w, t, (0.16 + len * 0.004) / t[1]) }; });
+            const side = (p, sd) => [p[0], p[1], p[2] * sd], yd = free - bul, deckAt = k => ST[k].t[1] - bul;
+            for (let k = 0; k + 1 < ST.length; k++) {
+                const A = ST[k], B = ST[k + 1];
+                for (const sd of [1, -1]) { q(side(A.lo, sd), side(B.lo, sd), side(A.b, sd), side(B.b, sd), boot); q(side(A.b, sd), side(B.b, sd), side(A.t, sd), side(B.t, sd), [tone(hull, 0.84), hull]); }
+                q([A.t[0], deckAt(k), -A.t[2] * 0.985], [A.t[0], deckAt(k), A.t[2] * 0.985], [B.t[0], deckAt(k + 1), -B.t[2] * 0.985], [B.t[0], deckAt(k + 1), B.t[2] * 0.985],
+                    k === 0 ? [teak, tone(teak, sail ? 0.9 : n > 1 ? 0.55 : 0.75)] : sail || B.t[0] < uf * len + 1 ? tone(teak, 0.8) : pale);
             }
-            boats.add(P(sec[0].x, -0.5, -sec[0].hb * 0.72), P(sec[0].x, -0.5, sec[0].hb * 0.72), P(sec[0].x, free, -sec[0].hb), P(sec[0].x, free, sec[0].hb), undefined, hull);
-            // the decks above: each a little shorter and narrower than the one below, with a dark band of windows
-            const decks = len > 40 ? 3 : len > 22 ? 2 : 1; let y = free, l = len * 0.52, w = beam * 0.78, cx = -len * 0.06;
-            for (let k = 0; k < decks; k++) {
-                const [bx, , bz] = P(cx, 0, 0), h = 1.5 + len * 0.02;
-                boats.box(bx, bz, heading, l, w, y, y + h, noUv, white); boats.box(bx, bz, heading, l * 0.96, w * 1.02, y + h * 0.38, y + h * 0.78, noUv, glass, false);
-                y += h; l *= 0.68; w *= 0.84; cx -= len * 0.03;
+            { const A = ST[0]; q(side(A.lo, -1), A.lo, [A.t[0], yd, -A.t[2]], [A.t[0], yd, A.t[2]], [tone(hull, 0.8), tone(hull, 0.95)]); }
+            // the swim platform at the stern, with steps up to the aft deck
+            const xs = -0.43 * len, wp = hb * 0.8, yp = 0.3 + len * 0.005;
+            block(-0.5 * len, xs, -0.3, yp, -wp, wp, tone(hull, 0.92), teak);
+            if (det && yd - yp > 0.8) { const steps = det, tread = Math.min(0.5, len * 0.014); for (let i = 1; i <= steps; i++) block(xs - tread * (steps + 1 - i), xs, yp, yp + (yd - yp) * i / (steps + 1), -wp * 0.45, wp * 0.45, tone(top, 0.86), teak, det > 1); }
+
+            // --- the decks above, each set back from the one below, with one long band of dark glass and a swept front ---
+            // the outline of a deck seen from above (one side, stern to bow): straight sides, swept in to a blunt nose
+            const outline = (xa, xf, w, sw) => det ? [[xa, w], [xf - sw, w], [xf - sw * 0.38, w * 0.74], [xf, w * 0.34]] : [[xa, w], [xf - sw, w], [xf, w * 0.4]];
+            const loop = half => [...half, ...half.slice().reverse().map(([px, pz]) => [px, -pz])];
+            const house = (xa, xf, w, y0, h, sw, rake) => {
+                const ring = loop(outline(xa, xf, w, sw)), N = ring.length;
+                const at = ([px, pz], t) => [px - rake * t * Math.max(0, Math.min(1, (px - (xf - sw)) / sw)), y0 + h * t, pz * (1 - 0.06 * t)];
+                const bands = det ? [[0, 0.3, tone(top, 0.86), top], [0.3, 0.78, glass, tone(glass, 0.6)], [0.78, 1, tone(top, 0.9), tone(top, 0.66)]] : [[0, 0.3, top, top], [0.3, 1, glass, tone(glass, 0.6)]];
+                for (let i = 0; i < N; i++) { const a = ring[i], b = ring[(i + 1) % N], k = i === N - 1 ? 0.78 : 1; for (const [t0, t1, c0, c1] of bands) q(at(a, t0), at(b, t0), at(a, t1), at(b, t1), [tone(c0, k), tone(c1, k)]); }   // (the last wall faces aft, under the deck above)
+            };
+            // the deck over a house: wider than its walls all round. 'open' and 'wall': where the deck above stops shading it, and where the next house begins
+            const slab = (xa, xf, w, y, th, sw, roof, open, wall) => {
+                const half = outline(xa, xf, w, sw), ring = loop(half), N = ring.length;
+                if (th) {
+                    for (let i = 0; i < N; i++) { const a = ring[i], b = ring[(i + 1) % N]; q([a[0], y, a[1]], [b[0], y, b[1]], [a[0], y + th, a[1]], [b[0], y + th, b[1]], top); }
+                    for (let i = 0; i + 1 < half.length; i++) flat(half[i], half[i + 1], y, tone(top, 0.5));
+                }
+                if (roof) flat(half[0], half[1], y + th, top);
+                else if (!det) flat(half[0], half[1], y + th, teak);
+                else { flat(half[0], [open, w], y + th, teak); flat([open, w], [wall, w], y + th, [teak, tone(teak, 0.5)]); flat([wall, w], half[1], y + th, tone(teak, 0.7)); }
+                for (let i = 1; i + 1 < half.length; i++) flat(half[i], half[i + 1], y + th, roof ? top : pale);
+            };
+            let xa = ua * len, xf = uf * len, w = hb * (sail ? 0.58 : 0.84), y = yd;
+            const h = sail ? 0.8 : n === 1 ? 1.9 : 2.1 + len * 0.008, th = !det ? 0 : sail ? 0.08 : 0.14 + len * 0.002, stepA = len * H(0.07, 0.085), stepF = len * 0.05, brow = sail ? 0.1 : 0.3 + len * 0.004;
+            const overAft = k => sail ? 0.1 : k === n - 1 ? (n === 1 ? len * 0.07 : 0.35 + len * 0.004) : k === 0 ? (ua + 0.43) * len * 0.55 : stepA * 0.6;
+            for (let k = 0; k < n; k++) {
+                const last = k === n - 1, sw = Math.min(w * 1.7, (xf - xa) * 0.42), rake = h * (sail ? 0.5 : last ? 0.62 : 0.32), ws = sail ? w + 0.06 : Math.min(hb * 0.96, k === 0 && n > 1 ? hb : w + 0.3 + len * 0.004);
+                house(xa, xf, w, y, h, sw, rake);
+                const sa = xa - overAft(k), sf = xf - rake + brow, nextA = xa + stepA, yt = y + h + th;
+                slab(sa, sf, ws, y + h, th, sw * ws / w, last, nextA - overAft(k + 1), nextA);
+                if (det > 1 && !last) {   // a thin white rail round the open aft deck
+                    const zr = ws - 0.07, x0 = sa + 0.07, bar = (a, b) => q([a[0], yt + 0.93, a[1]], [b[0], yt + 0.93, b[1]], [a[0], yt + 1.02, a[1]], [b[0], yt + 1.02, b[1]], top);
+                    bar([x0, -zr], [x0, zr]); bar([x0, zr], [nextA, zr]); bar([x0, -zr], [nextA, -zr]);
+                    const posts = Math.max(2, Math.round(zr / 1.3)); for (let i = 0; i <= posts; i++) { const pz = -zr + 2 * zr * i / posts; q([x0, yt, pz - 0.035], [x0, yt, pz + 0.035], [x0, yt + 0.93, pz - 0.035], [x0, yt + 0.93, pz + 0.035], top); }
+                    for (const sd of [1, -1]) { const px = (x0 + nextA) / 2; q([px - 0.035, yt, sd * zr], [px + 0.035, yt, sd * zr], [px - 0.035, yt + 0.93, sd * zr], [px + 0.035, yt + 0.93, sd * zr], top); }
+                }
+                if (last) break;
+                xa = nextA; xf = sf - brow - stepF; w *= 0.88; y = yt;
             }
+            const Y = y + h + th;   // (the top of the highest deck)
+
+            if (sail) {
+                // --- a sailing yacht: a tall mast, the boom with its sail stowed under a cover, and the furled sail on the forestay ---
+                const xm = 0.1 * len, hm = len * 1.18, r = 0.09 + len * 0.004, metal = [0.82, 0.84, 0.86], cover = one([navy, cream, teal]);
+                const corner = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+                for (let i = 0; i < 4; i++) { const a = corner[i], b = corner[(i + 1) % 4]; q([xm + a[0] * r, Y, a[1] * r], [xm + b[0] * r, Y, b[1] * r], [xm + a[0] * r * 0.55, Y + hm, a[1] * r * 0.55], [xm + b[0] * r * 0.55, Y + hm, b[1] * r * 0.55], [tone(metal, 0.85), metal]); }
+                block(xm - 0.38 * len, xm - r, Y + 1.1, Y + 1.1 + 0.2 + len * 0.012, -0.12 - len * 0.006, 0.12 + len * 0.006, cover);
+                const bx = 0.47 * len, by = free + rise * 0.9, tx = xm + r, ty = Y + hm * 0.93, fw = 0.1 + len * 0.004;
+                q([bx - fw, by, 0], [bx + fw, by, 0], [tx - fw, ty, 0], [tx + fw, ty, 0], cream); if (det) q([bx, by, -fw], [bx, by, fw], [tx, ty, -fw], [tx, ty, fw], tone(cream, 0.9));
+                if (det) for (const t of [0.42, 0.7]) flat([xm - r, hb * 0.5 * (1.2 - t)], [xm + r, hb * 0.5 * (1.2 - t)], Y + hm * t, metal);
+                return hb;
+            }
+            // --- the radar arch, raked back, with white domes on top ---
+            {
+                const ax = xa + (xf - xa) * 0.28, la = 0.55 + len * 0.014, ha = 1.3 + len * 0.03, back = ha * 0.55, wa = w * 0.8, tl = la * 0.7, tk = 0.16 + len * 0.003;
+                const leg = zz => q([ax, Y, zz], [ax + la, Y, zz], [ax - back, Y + ha, zz], [ax - back + tl, Y + ha, zz], [tone(top, 0.82), top]);
+                for (const sd of [1, -1]) { leg(sd * wa); if (det > 1) { leg(sd * (wa - tk)); q([ax, Y, sd * (wa - tk)], [ax, Y, sd * wa], [ax - back, Y + ha, sd * (wa - tk)], [ax - back, Y + ha, sd * wa], tone(top, 0.8)); q([ax + la, Y, sd * (wa - tk)], [ax + la, Y, sd * wa], [ax - back + tl, Y + ha, sd * (wa - tk)], [ax - back + tl, Y + ha, sd * wa], top); } }
+                if (det > 1) block(ax - back, ax - back + tl, Y + ha - tk, Y + ha, -wa, wa, tone(top, 0.85), top, false); else flat([ax - back, wa], [ax - back + tl, wa], Y + ha, top);
+                const r = 0.24 + len * 0.008, seg = det ? 6 : 4, cx = ax - back + tl / 2;
+                if (len >= 28) {
+                    for (const sd of [1, -1]) ball(cx, Y + ha + r * 0.85, sd * wa * 0.5, r, seg);
+                    if (det) {   // an aerial between them, and the radar's bar lying along the arch
+                        const ph = ha * 0.9, pw = 0.07 + len * 0.002, lean = ph * 0.25; q([cx - pw, Y + ha, 0], [cx + pw, Y + ha, 0], [cx - lean, Y + ha + ph, 0], [cx - lean, Y + ha + ph, 0], top); q([cx, Y + ha, -pw], [cx, Y + ha, pw], [cx - lean, Y + ha + ph, 0], [cx - lean, Y + ha + ph, 0], top);
+                        if (det > 1) block(cx + tl * 0.2, cx + tl * 0.2 + 0.22, Y + ha, Y + ha + 0.2, -wa * 0.22, wa * 0.22, tone(top, 0.8), top);
+                    }
+                } else ball(cx, Y + ha + r * 0.85, 0, r, seg);
+            }
+            // --- on the biggest: a helicopter pad on the foredeck ---
+            if (heli) {
+                const cx = 0.27 * len, r = Math.min(hb * 0.6, len * 0.07), yh = yd + 0.55 * rise + 0.2, pad = [0.24, 0.27, 0.3], M = 12, pt = (k, f) => { const a = k / M * 6.2832; return [cx + Math.cos(a) * r * f, yh, Math.sin(a) * r * f]; };
+                for (let k = 0; k < M; k++) { q(pt(k, 0.8), pt(k + 1, 0.8), pt(k, 1), pt(k + 1, 1), white); if (det) { const a = pt(k, 1), b = pt(k + 1, 1); q([a[0], yh - 0.7, a[2]], [b[0], yh - 0.7, b[2]], a, b, [tone(pale, 0.6), pale]); } }
+                for (let k = 0; k < M; k += 2) q(pt(k, 0.8), pt(k + 1, 0.8), [cx, yh, 0], pt(k + 2, 0.8), pad);
+                if (det) { const u = r * 0.3, t = r * 0.07, yy = yh + 0.12, bar = (x0, x1, z0, z1) => q([x0, yy, z0], [x1, yy, z0], [x0, yy, z1], [x1, yy, z1], [0.95, 0.85, 0.3]); bar(-u + cx, u + cx, -u, -u + 2 * t); bar(-u + cx, u + cx, u - 2 * t, u); bar(cx - t, cx + t, -u, u); }
+            }
+            // --- and a tender: on the foredeck of the big ones by the quay, on the water beside the ones at anchor ---
+            if (det && n >= 3 && !(heli && o.near)) {
+                const L = 4 + len * 0.035, tw = L * 0.2, th2 = L * 0.12, afloat = !o.near, tx = afloat ? -0.34 * len : uf * len + L / 2 + 0.8, tz = afloat ? hb + tw + 0.9 : 0, ty = afloat ? -0.06 : yd + 0.36 * rise + 0.05;
+                const T3 = [[-0.5, 1], [0.15, 1], [0.5, 0.12]].map(([u, f]) => [tx + u * L, f * tw]);
+                for (let k = 0; k < 2; k++) { const A = T3[k], B = T3[k + 1]; for (const sd of [1, -1]) q([A[0], ty, tz + sd * A[1] * 0.8], [B[0], ty, tz + sd * B[1] * 0.8], [A[0], ty + th2, tz + sd * A[1]], [B[0], ty + th2, tz + sd * B[1]], [tone(rubber, 0.8), rubber]);
+                    q([A[0], ty + th2 * 0.7, tz - A[1] * 0.9], [A[0], ty + th2 * 0.7, tz + A[1] * 0.9], [B[0], ty + th2 * 0.7, tz - B[1] * 0.9], [B[0], ty + th2 * 0.7, tz + B[1] * 0.9], pale); }
+                q([T3[0][0], ty, tz - tw * 0.8], [T3[0][0], ty, tz + tw * 0.8], [T3[0][0], ty + th2, tz - tw], [T3[0][0], ty + th2, tz + tw], rubber);
+                block(tx - L * 0.12, tx + L * 0.02, ty + th2 * 0.7, ty + th2 * 0.7 + L * 0.13, tz - tw * 0.35, tz + tw * 0.35, white, glass, det > 1);
+            }
+            return hb;
         };
-        // along the quay, bows pointing out
-        for (const [from, to] of [[2186, 2350], [2412, 2866]]) for (let d = from + R(0, 6); d < to;) {
-            const len = Math.random() < 0.12 ? R(38, 52) : R(13, 30), s = at(d), p = T.pathAt(d, s.wl + QUAY + 2.5 + len / 2, 0);
-            if (inWater(p.x, p.z) && Math.abs(s.ks) < 0.02) yacht(p.x, p.z, s.heading + Math.PI / 2 + R(-0.03, 0.03), len);
-            d += len * 0.23 + R(2.2, 5);
+        // along the quay, sterns to the quay and bows pointing out: mostly motor yachts of 13 to 30 metres, now and then
+        // a big one, and a couple of sailing yachts. Each is squared up to the quay where it lies (not to the road, which
+        // swerves), and is only moored where it clears its neighbours and the pontoons.
+        const PONTOONS = [2240, 2300, 2470, 2560, 2660, 2760, 2840], berths = [];
+        const berth = (bx, bz, heading, l, hw) => ({ x: bx, z: bz, c: Math.cos(heading), s: Math.sin(heading), hl: l / 2, hw });
+        const corners = r => [-1, -0.5, 0, 0.5, 1].flatMap(u => [-1, 0, 1].map(v => [r.x + u * r.hl * r.c + v * r.hw * r.s, r.z - u * r.hl * r.s + v * r.hw * r.c]));
+        const inside = (r, [px, pz], pad) => { const dx = px - r.x, dz = pz - r.z; return Math.abs(dx * r.c - dz * r.s) < r.hl + pad && Math.abs(dx * r.s + dz * r.c) < r.hw + pad; };
+        const clash = (a, b, pad) => corners(a).some(p => inside(b, p, pad)) || corners(b).some(p => inside(a, p, pad));
+        for (const pd of PONTOONS) { const ps = at(pd), p = T.pathAt(pd, ps.wl + QUAY + 22, 0); berths.push(berth(p.x, p.z, ps.heading + Math.PI / 2, 44, 1.1)); }
+        const edge = d => { const p = T.pathAt(d, at(d).wl + QUAY, 0); return [p.x, p.z]; };
+        let moored = 0;
+        for (const [from, to] of [[2186, 2350], [2412, 2866]]) for (let d = from + H(2, 5), size = null; d < to; d += 1.2) {
+            size = size || { sail: moored % 19 === 7, big: rnd() < 0.12 };
+            const sail = size.sail, len = size.len || (size.len = sail ? H(16, 24) : size.big ? H(38, 52) : H(13, 30)), half = (sail ? 1.3 + len * 0.19 : 1.7 + len * 0.14) / 2;
+            const e = edge(d), e0 = edge(d - 12), e1 = edge(d + 12), out = T.pathAt(d, at(d).wl + QUAY + 10, 0), run = Math.hypot(e1[0] - e0[0], e1[1] - e0[1]);
+            let nx = -(e1[1] - e0[1]) / run, nz = (e1[0] - e0[0]) / run; if ((out.x - e[0]) * nx + (out.z - e[1]) * nz < 0) { nx = -nx; nz = -nz; }
+            // (the stern lies 2.5 m off the quay; on a bend, a little further, until both its corners are over the water)
+            let gap = 2.5; while (gap < 7 && ![-1, 1].every(sd => inWater(e[0] + nx * (gap - 1.6) - nz * sd * half, e[1] + nz * (gap - 1.6) + nx * sd * half))) gap += 0.75;
+            const cx = e[0] + nx * (gap + len / 2), cz = e[1] + nz * (gap + len / 2), heading = Math.atan2(-nz, nx) + H(-0.02, 0.02), mine = berth(cx, cz, heading, len, half);
+            if (gap >= 7 || !corners(mine).every(([px, pz]) => inWater(px, pz)) || berths.some(o => clash(mine, o, 1))) { if ((size.tries = (size.tries || 0) + 1) > 14) size = null; continue; }
+            yacht(cx, cz, heading, len, { near: true, sail }); berths.push(mine); moored++; size = null; d += half + H(0.2, 1.6);
         }
         // the two harbour walls reach out from either shore, leaving a gap between their ends (each has a little lighthouse)
         const n0 = T.pathAt(1996, at(1996).wl + 5, 0), q0 = coast[Math.round((2894 - 1446) / 6)];
@@ -413,11 +545,12 @@ export function monacoScenery(ctx) {
         for (const [x0, z0, x1, z1] of walls) mark(footprint((x0 + x1) / 2, (z0 + z1) / 2, Math.atan2(-(z1 - z0), x1 - x0), Math.hypot(x1 - x0, z1 - z0) + 30, 40));
         // out in the harbour and off the coast: a few of the really big ones, at anchor
         const mid = T.pathAt(2500, 170, 0);
+        const wind = 0.9;   // (boats at anchor all swing the same way)
         for (let k = 0, n = 0; k < 400 && n < 11; k++) {
-            const x = mid.x + R(-190, 600), z = mid.z + R(-460, 190); if (!inWater(x, z)) continue;
+            const x = mid.x + H(-190, 600), z = mid.z + H(-460, 190); if (!inWater(x, z)) continue;
             const far = T.near(x, z); if (far.i >= 0 && far.dist < 95) continue;
-            const len = R(34, 78), pts = footprint(x, z, 0, len + 30, len + 30); if (!pts.every(([fx, fz]) => inWater(fx, fz) && !taken.has(tk(fx, fz)))) continue;
-            mark(pts); yacht(x, z, R(0, 6.28), len); n++;
+            const len = H(34, 78), pts = footprint(x, z, 0, len + 30, len + 30); if (!pts.every(([fx, fz]) => inWater(fx, fz) && !taken.has(tk(fx, fz)))) continue;
+            mark(pts); yacht(x, z, wind + H(-0.3, 0.3), len); n++;
         }
         // the harbour walls, each with a little lighthouse on the end
         for (const [x0, z0, x1, z1, lamp] of walls) {
