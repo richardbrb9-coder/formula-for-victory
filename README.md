@@ -4,14 +4,20 @@ A Grand Prix racing game for ages 9 to 12: single-seater racing cars on real cir
 Supercar Legends. Plain JavaScript and three.js, installable (a PWA), and it works with no internet: nothing is loaded
 from other websites.
 
-**Phase 3 (this version):** the app, and all five circuits fully playable: Monza, Silverstone, Monaco, Suzuka (a
-figure of eight: the track crosses over itself on a bridge) and Las Vegas (a street circuit, always raced at night).
+**Phase 4 (this version):** a championship season across all five circuits, a main menu with Championship, Quick
+race and Time trial, a How to play screen, Settings (with a volume control), and a crowd, countdown and fanfare made in
+code. The five circuits: Monza, Silverstone, Monaco, Suzuka (a figure of eight: the track crosses over itself on a
+bridge) and Las Vegas (a street circuit, always raced at night).
 
 ## How it fits together
 
 | File | What it does |
 | --- | --- |
-| `index.html`, `style.css`, `app.js` | The app: title, choose a circuit, set up a race, credits, Install button |
+| `index.html`, `style.css`, `app.js` | The app: title and main menu, choose a circuit, set up a race, How to play, Settings, credits, Install button |
+| `teams.js` | **The one place** for every team name, driver name, team colour and car number |
+| `season.js` | The championship's rules: the order of the races, the points, the tables, saving and mending a season |
+| `championship.js` | The championship's screens: a new season, the season so far, after each race, the champion |
+| `sound.js` | The volume control every sound goes through, menu taps, countdown beeps, the crowd and the fanfare |
 | `race.js` | The racing: driving, rivals, cameras, HUD, minimap, results, podium, replay, sound |
 | `track.js` | Turns a circuit's data into the road: samples every 2 m, road, kerbs, run-off, barriers, grid, gantry |
 | `circuits/index.js` | The list of circuits |
@@ -28,6 +34,36 @@ figure of eight: the track crosses over itself on a bridge) and Las Vegas (a str
 | `formula.js`, `carmodel.js`, `cockpit.js`, `suspension.js`, `damage.js`, `effects.js`, `post.js`, `reflections.js`, `soundfx.js`, `weather.js`, `scenery.js`, `trackdetail.js`, `standdata.js` | Carried over from Supercar Legends (some trimmed) |
 | `sw.js`, `manifest.json`, `icon-*.png` | Installing and working offline |
 
+## Teams and drivers (`teams.js`)
+
+- Every team name, driver name, colour and car number is in the table at the top of `teams.js`, and nowhere else. To
+  change one, change it there. Never change a team's `id`: saved seasons remember teams by it.
+- All of them are made up, and must stay made up: no real teams, drivers, sponsors or brands, and never the name of a
+  real racing series. Drivers are only ever shown in a helmet.
+- A device can keep its own names (for a renaming screen later, which does not exist yet): `FFV.rename('apex', { team,
+  driver })` saves them under `ffv_names`; `FFV.resetNames()` goes back to the table. Names are cleaned and cut to 24
+  letters, and are always escaped where they are shown.
+
+## The championship
+
+- Five races in the order set by `ROUNDS` in `season.js` (Monza, Silverstone, Suzuka, Monaco, Las Vegas), each with its
+  own weather (looks only). Points for the top ten: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1 (`POINTS`).
+- The season is saved under `ffv_champ` the moment you cross the line (`onFinish` in `championship.js`). Only the
+  finishing orders are saved; points and tables are always worked out again from them, so they can't disagree.
+- A race you leave part-way was never saved, so it starts again from the grid. Recording a race only ever fills in the
+  next race of the season, so nothing can be counted twice. `check()` mends old or damaged saves.
+- The rivals' places on the grid come from each driver's `pace` in `teams.js` plus some luck (`grid()`); the cars
+  themselves are as quick as in a single race. With ten teams of one car each, the teams' table follows the drivers'.
+- Testing: `window.__autopilot = true` (or `__kidbot`), `__noGridCam = true` and `__timeScale = 4` play a race quickly.
+  Keep `__timeScale` at 4 or less: higher than that the cars' springs go wrong and the bodies vanish from the podium.
+
+## Sound
+
+- Every sound must go to `window.audioOut()` (never straight to the speakers), so the volume and mute work on it.
+- `ffv_raceSound` is the mute and `ffv_volume` is 1, 2 or 3. The loudspeaker button, Settings and the racing screen's
+  Sound button all change the same setting.
+- When the app is hidden the whole sound system is put to sleep; cheers and the fanfare are cut off on leaving a screen.
+
 ## Adding a circuit
 
 1. Put the OpenStreetMap data (Overpass `out geom` JSON) in `../research/osm/`.
@@ -37,7 +73,8 @@ figure of eight: the track crosses over itself on a bridge) and Las Vegas (a str
 3. Write `circuits/<id>.js` (copy `monza.js`): widths, run-off zones, corner names, and `elevation` if the circuit has
    hills or crosses itself on a bridge (see `monaco.js`: heights in metres at points round the lap, joined by slopes and
    rounded off). A street circuit also sets `tightWalls` (keeps the camera between the walls) and lists its `tunnels`.
-4. Write its scenery file, switch it on in `circuits/index.js`, and add its files to `sw.js`.
+4. Write its scenery file, switch it on in `circuits/index.js`, add its files to `sw.js`, and give it a place in the
+   season (`ROUNDS` in `season.js`).
 5. Give it a `backdrop` (see `monaco.js` and the notes at the top of `backdrop.js`): which sky photo, the colour of the
    haze, its light and colour grade, and the layers of its painted horizon (ridges, woods, fields, a town, the sea,
    by compass bearing). A new sky photo is made with `tools/bake_sky.py` and listed in `SKIES` in `backdrop.js`, in
@@ -88,7 +125,7 @@ figure of eight: the track crosses over itself on a bridge) and Las Vegas (a str
 
 ## Rules for this game
 
-- Made-up teams, drivers and sponsors only. No real series, team, sponsor, hotel or company names or logos. Real place
+- Made-up teams, drivers and sponsors only (all in `teams.js`). No real series, team, sponsor, hotel or company names or logos. Real place
   names are fine. A real corner that is named after a sponsor gets a plain name here instead (see `suzuka.js`).
 - Crash damage changes how a car looks, never how it drives. Weather never changes grip.
 - Everything saved on the device starts with `ffv_` (the owner's other apps share the same web address).
