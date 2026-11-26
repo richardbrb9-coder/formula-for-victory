@@ -36,7 +36,7 @@ function buildTrack(scene) {
     group.traverse(o => { if (o.isMesh && !o.receiveShadow && o.material && !o.material.transparent) o.receiveShadow = true; });
     // Distance culling: anything lost in the haze isn't drawn at all (big buildings give up a little sooner). Each piece of
     // scenery is measured once here; track.js then switches them on and off a few times a second.
-    const listed = new Set(made.lod.map(l => l.o)), box = new THREE.Box3(), ball = new THREE.Sphere(), hazeEnd = ((TRACK.backdrop && TRACK.backdrop.looks && TRACK.backdrop.looks.sunny && TRACK.backdrop.looks.sunny.fog) || SC.THEMES[TRACK.theme].fog)[1];   // (where this circuit's haze is complete)
+    const listed = new Set(made.lod.map(l => l.o)), box = new THREE.Box3(), ball = new THREE.Sphere(), ownLooks = (TRACK.backdrop && TRACK.backdrop.looks) || {}, ownLook = ownLooks[TRACK.time] || ownLooks.sunny, hazeEnd = ((ownLook && ownLook.fog) || SC.THEMES[TRACK.theme].fog)[1];   // (where this circuit's haze is complete)
     for (const o of group.children) {
         if (listed.has(o) || o.userData.always) continue;
         box.setFromObject(o); if (box.isEmpty()) continue;
@@ -1448,7 +1448,7 @@ function setAtmosphere(theme) {
     hemi.color.set(th.light.hemiSky); hemi.groundColor.set(th.light.hemiGround);
     SC.setTreeLight(th);
     renderer.toneMappingExposure = th.light.exposure;
-    if (headlight) headlight.visible = carGlow.visible = timeOfDay === 'night';
+    if (headlight) headlight.visible = carGlow.visible = timeOfDay === 'night' && !TRACK.floodlit;   // (a floodlit circuit needs no headlight)
     // glowing things (lamps, lit windows, tail lights) glow brighter in the dark
     world.group.traverse(o => { if (o.material) [].concat(o.material).forEach(m => {
         if (!m.emissive) return;

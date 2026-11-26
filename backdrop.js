@@ -132,6 +132,8 @@ export function lookFor(circuit, t) {
 //    trees   the top of a wood: the same, with a bumpy leafy edge
 //    fields  farmland rising gently: patchwork fields with hedges between them and a few trees
 //    town    buildings on a hillside: { ..., count, cover, colours } (lit windows at night)
+//    skyline a city on a plain: towers standing along the horizon: { from, to, height, count, colour, wide } (at night
+//            their windows are lit, and some wear a band of coloured light)
 //    clouds  low clouds hanging on the hills: { from, to, base, height, count }
 //    sea     open water out to the horizon: { from, to }
 //  from, to: compass bearings in degrees (0 north, 90 east), clockwise from 'from' to 'to'; leave both out for all the
@@ -193,6 +195,25 @@ function horizonTexture(look, low) {
                         const g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, css(col, a)); g.addColorStop(0.55, css(col, a * 0.7)); g.addColorStop(1, css(col, 0));
                         x.fillStyle = g; x.beginPath(); x.arc(0, 0, 1, 0, 7); x.fill(); x.restore(); } });
                 }
+            }
+            continue;
+        }
+        if (L.kind === 'skyline') {
+            // the tallest few stand out; most are low blocks. Drawn from the back (palest) to the front.
+            const n = Math.round((L.count || 240) * (low ? 0.6 : 1)), base = L.base || 0, neon = ['255,60,200', '60,220,255', '255,190,60', '170,110,255', '90,255,170'];
+            for (let i = 0; i < n; i++) {
+                const b = inSpan(L, r), far = 1 - i / n, hDeg = L.height * span(L, b) * (0.12 + 0.88 * Math.pow(r(), 2.6)) * (1 - 0.35 * far), wDeg = (0.22 + r() * 0.5) * (L.wide || 1) * (1 - 0.3 * far), r1 = r(), r2 = r(), r3 = r();
+                if (hDeg < 0.05) continue;
+                const wall = look.night ? shade(L.colour ?? 0x2a2e3a, hz * (0.5 + 0.5 * far)) : shade(L.colour ?? 0x9aa3ad, hz * (0.6 + 0.4 * far), 0.85 + 0.3 * r1);
+                wrap(b, wDeg, bb => {
+                    const u = X(bb), v = Y(base + hDeg), w = Math.max(2, wDeg * px), h = Y(base) - v + 1;
+                    x.fillStyle = css(wall); x.fillRect(u, v, w, h);
+                    if (look.night) {
+                        // lit windows: warm, with a few cool white ones; and on some towers a band of coloured light
+                        for (let yy = v + 1.5; yy < v + h - 1; yy += 2.2) for (let xx = u + 1; xx < u + w - 1; xx += 2) { const q = Math.sin(xx * 12.9898 + yy * 78.233 + r1 * 40) * 43758.5453, f = q - Math.floor(q); if (f < 0.42) { x.fillStyle = f < 0.05 ? 'rgba(215,232,255,0.9)' : `rgba(255,${205 + Math.floor(f * 90)},130,${0.55 + f})`; x.fillRect(xx, yy, 1.1, 1.1); } }
+                        if (r2 < 0.3 && h > 8) { x.fillStyle = `rgba(${neon[Math.floor(r3 * neon.length)]},0.95)`; x.fillRect(u, v, w, 1.4); if (r3 < 0.5) { x.fillRect(u, v, 1, h); x.fillRect(u + w - 1, v, 1, h); } }
+                    } else if (h > 5) { x.fillStyle = css(wall.clone().multiplyScalar(0.8), 0.6); for (let yy = v + 2; yy < v + h - 1; yy += 2.6) x.fillRect(u + 1, yy, w - 2, 0.8); }
+                });
             }
             continue;
         }
