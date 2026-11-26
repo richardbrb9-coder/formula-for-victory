@@ -291,14 +291,68 @@ export function buildTrackMeshes(T, GRID) {
     const ct = new THREE.CanvasTexture(cc); ct.magFilter = THREE.NearestFilter;
     const line = new THREE.Mesh(new THREE.PlaneGeometry(W0, 2), new THREE.MeshBasicMaterial({ map: ct }));
     line.rotation.x = -Math.PI / 2; line.rotation.z = s0.heading + Math.PI / 2; line.position.set(s0.p.x, s0.p.y + 0.04, s0.p.z); group.add(line);
-    const gantry = new THREE.Group(), dark = new THREE.MeshStandardMaterial({ color: 0x2a2f39, metalness: 0.6, roughness: 0.4 });
-    const reachL = s0.wl + 0.8, reachR = s0.wr + 0.8;
-    for (const z of [reachL, -reachR]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.6, 7.7, 0.6), dark); post.position.set(0, 3.85, z); post.castShadow = true; gantry.add(post); }
-    const beam = new THREE.Mesh(new THREE.BoxGeometry(1, 1.4, reachL + reachR + 0.6), dark); beam.position.set(0, 7, (reachL - reachR) / 2); beam.castShadow = true; gantry.add(beam);
+    // The start gantry: two lattice towers with striped feet, a steel truss across the road, the board of start lights
+    // hanging from it (five columns of two lamps, facing the grid) and a name board along the top. All the steelwork
+    // is ONE mesh (each part painted by its own colour), the name board is one more, and each column of lamps is one.
+    const gantry = new THREE.Group(), steel = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.5, roughness: 0.5 });
+    const reachL = s0.wl + 0.8, reachR = s0.wr + 0.8, mid = (reachL - reachR) / 2, span = reachL + reachR;
+    const STEEL = 0x8f98a3, DARK = 0x23272e, RED = 0xd41a12, WHITE = 0xeef0f2, parts = [], tint = new THREE.Color();
+    const part = (w, h, dp, x, y, z, colour = STEEL, turn = 0) => {
+        const g = new THREE.BoxGeometry(w, h, dp), n = g.attributes.position.count, cols = new Float32Array(n * 3); tint.set(colour);
+        for (let i = 0; i < n; i++) { cols[i * 3] = tint.r; cols[i * 3 + 1] = tint.g; cols[i * 3 + 2] = tint.b; }
+        g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+        const m = new THREE.Mesh(g, steel); m.position.set(x, y, z); m.rotation.x = turn; m.castShadow = true; gantry.add(m); parts.push(m);
+    };
+    // a brace from (y0, z0) to (y1, z1) on the face at x
+    const brace = (x, y0, z0, y1, z1, t = 0.12) => part(t, t, Math.hypot(y1 - y0, z1 - z0), x, (y0 + y1) / 2, (z0 + z1) / 2, STEEL, -Math.atan2(y1 - y0, z1 - z0));
+    const FACE = 0.7, TOP = 7.6, LOW = 6.3;
+    for (const z of [reachL, -reachR]) {
+        for (const x of [-FACE, FACE]) {
+            part(0.3, TOP + 0.1, 0.3, x, (TOP + 0.1) / 2, z);                                         // the tower's legs
+            for (let k = 0; k < 4; k++) part(0.36, 0.4, 0.36, x, 0.2 + k * 0.4, z, k % 2 ? WHITE : RED);   // their striped feet
+        }
+        for (let y = 1.7, k = 0; y < LOW; y += 1.5, k++) {                                         // rungs and zigzag braces between the legs
+            part(FACE * 2, 0.12, 0.12, 0, y, z);
+            const up = Math.min(LOW, y + 1.5), dir = k % 2 ? 1 : -1, len = Math.hypot(up - y, FACE * 2), b = new THREE.Mesh(new THREE.BoxGeometry(len, 0.1, 0.1), steel);
+            const cols = new Float32Array(b.geometry.attributes.position.count * 3); tint.set(STEEL); for (let i = 0; i < cols.length; i += 3) { cols[i] = tint.r; cols[i + 1] = tint.g; cols[i + 2] = tint.b; }
+            b.geometry.setAttribute('color', new THREE.BufferAttribute(cols, 3)); b.position.set(0, (y + up) / 2, z); b.rotation.z = dir * Math.atan2(up - y, FACE * 2); b.castShadow = true; gantry.add(b); parts.push(b);
+        }
+    }
+    // the truss: four long chords, with uprights and zigzag braces on both faces, and ties across the top
+    for (const x of [-FACE, FACE]) for (const y of [LOW, TOP]) part(0.2, 0.2, span + 0.3, x, y, mid);
+    const bays = Math.max(4, Math.round(span / 2.3)), bay = span / bays;
+    for (let k = 0; k <= bays; k++) {
+        const z = -reachR + k * bay;
+        for (const x of [-FACE, FACE]) { part(0.12, TOP - LOW, 0.12, x, (TOP + LOW) / 2, z); if (k < bays) brace(x, k % 2 ? TOP : LOW, z, k % 2 ? LOW : TOP, z + bay); }
+        part(FACE * 2, 0.1, 0.1, 0, TOP, z); part(FACE * 2, 0.1, 0.1, 0, LOW, z);
+    }
+    // the board of lights, hung over the middle of the road on the side facing the grid, with a pale rim round it
+    const BX = -FACE - 0.32, BW = 7.4, BY0 = 5.25, BY1 = 7.25;
+    part(0.26, BY1 - BY0, BW, BX, (BY0 + BY1) / 2, 0, 0x0c0e11);
+    for (const y of [BY0, BY1]) part(0.3, 0.09, BW + 0.1, BX, y, 0, 0xc9ced6);
+    for (const z of [-BW / 2, BW / 2]) part(0.3, BY1 - BY0, 0.09, BX, (BY0 + BY1) / 2, z, 0xc9ced6);
+    for (const z of [-2.4, 2.4]) part(0.14, 0.5, 0.14, -FACE - 0.1, BY1 + 0.2, z, DARK);            // its hangers
+    { const done = SC.mergeStatic(parts); for (const m of parts) { gantry.remove(m); m.geometry.dispose(); } gantry.add(done); }
+    // the name board along the top (both faces read the right way round); at night it glows
+    const sign = SC.canvasTex(1024, 96, (x, w, h) => {
+        x.fillStyle = '#14171c'; x.fillRect(0, 0, w, h);
+        for (const x0 of [0, w - 144]) for (let i = 0; i < 6; i++) for (let j = 0; j < 4; j++) { x.fillStyle = (i + j) % 2 ? '#14171c' : '#f4f6f8'; x.fillRect(x0 + i * 24, j * 24, 24, 24); }
+        x.fillStyle = '#e10600'; x.fillRect(144, 0, 10, h); x.fillRect(w - 154, 0, 10, h);
+        x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillStyle = '#f4f6f8';
+        const name = String(C.name || '').toUpperCase(); let px = 58; x.font = `900 ${px}px Orbitron, 'Arial Black', sans-serif`;
+        while (px > 26 && x.measureText(name + '  ·  GRAND PRIX').width > w - 360) { px -= 2; x.font = `900 ${px}px Orbitron, 'Arial Black', sans-serif`; }
+        x.fillText(name + '  ·  GRAND PRIX', w / 2, h / 2 + 3);
+    }, false);
+    const SW = Math.min(span - 1.5, 17), board = new THREE.Mesh(new THREE.BoxGeometry(0.16, SW * 96 / 1024, SW), new THREE.MeshStandardMaterial({ map: sign, emissiveMap: sign, emissive: 0xffffff, emissiveIntensity: 0, roughness: 0.6 }));
+    board.position.set(0, TOP + 0.12 + SW * 48 / 1024, mid); board.castShadow = true; gantry.add(board);
     const lightMats = [];
-    for (let i = 0; i < 5; i++) {
-        const m = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff1a10, emissiveIntensity: 0 }); lightMats.push(m);
-        const l = new THREE.Mesh(new THREE.SphereGeometry(0.42, 12, 8), m); l.position.set(-0.55, 7, (i - 2) * 1.3); gantry.add(l);
+    {
+        const lamps = [], lamp = new THREE.SphereGeometry(0.34, 14, 10);
+        for (let i = 0; i < 5; i++) {
+            const m = new THREE.MeshStandardMaterial({ color: 0x220000, emissive: 0xff1a10, emissiveIntensity: 0 }); lightMats.push(m);
+            for (const y of [6.72, 5.8]) { const l = new THREE.Mesh(lamp, m); l.scale.x = 0.4; l.position.set(BX - 0.13, y, (i - 2) * 1.35); gantry.add(l); lamps.push(l); }
+        }
+        const done = SC.mergeStatic(lamps); for (const l of lamps) gantry.remove(l); lamp.dispose(); gantry.add(done);
     }
     gantry.position.set(s0.p.x, s0.p.y, s0.p.z); gantry.rotation.y = s0.heading; group.add(gantry);
 

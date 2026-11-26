@@ -182,13 +182,30 @@ const wrapD = (d, L) => { d = ((d % L) + L) % L; return d > L / 2 ? d - L : d; }
 // right beside today's start straight it is left out. Returns a test: is this spot on or right beside the banking?
 function oldBanking(ctx) {
     const { T, group } = ctx, HALF = 4.6, mark = new Map(), key = (x, z) => Math.floor(x / 14) * 100003 + Math.floor(z / 14);
-    // old, weathered concrete: cast in slabs, streaked by sixty years of rain
-    const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, side: THREE.DoubleSide, map: SC.canvasTex(256, 256, (x, w, h) => {
-        x.fillStyle = '#a9a496'; x.fillRect(0, 0, w, h);
-        for (let i = 0; i < 2600; i++) { const g = 120 + Math.random() * 70; x.fillStyle = `rgba(${g},${g - 4},${g - 16},0.35)`; x.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 3, 1 + Math.random() * 3); }
-        for (let i = 0; i < 26; i++) { const u = Math.random() * w, len = 40 + Math.random() * 200; const g = x.createLinearGradient(0, 0, 0, len); g.addColorStop(0, 'rgba(40,38,30,0.32)'); g.addColorStop(1, 'rgba(40,38,30,0)'); x.fillStyle = g; x.fillRect(u, 0, 3 + Math.random() * 9, len); }
-        for (let i = 0; i < 9; i++) { x.fillStyle = `rgba(70,84,50,${0.08 + Math.random() * 0.12})`; x.beginPath(); x.ellipse(Math.random() * w, Math.random() * h, 20 + Math.random() * 40, 10 + Math.random() * 30, 0, 0, 7); x.fill(); }   // moss
-        x.fillStyle = 'rgba(30,30,28,0.55)'; x.fillRect(0, 0, w, 2); x.fillRect(0, 0, 2, h);                     // the joints between slabs
+    // Old, weathered concrete: cast in big slabs, streaked by sixty years of rain. One picture covers the banking's whole
+    // width (9.2 m) and 18 m of its length, and joins up with itself end to end, so it never shows as a pattern of squares.
+    // Across the picture is across the track (and up a wall); down the picture is along the track.
+    const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, side: THREE.DoubleSide, map: SC.canvasTex(512, 1024, (x, w, h) => {
+        x.fillStyle = '#a7a294'; x.fillRect(0, 0, w, h);
+        // (everything is drawn again one picture-length up and down, so the top edge matches the bottom edge)
+        const lapped = draw => { for (const oy of [-h, 0, h]) { x.save(); x.translate(0, oy); draw(); x.restore(); } };
+        for (let i = 0; i < 70; i++) {                               // big soft patches: lighter where it has worn, darker where it stays damp
+            const cx = Math.random() * w, cy = Math.random() * h, r = 50 + Math.random() * 130, dark = Math.random() < 0.55, a = 0.05 + Math.random() * 0.07;
+            lapped(() => { const g = x.createRadialGradient(cx, cy, 0, cx, cy, r); g.addColorStop(0, dark ? `rgba(58,56,46,${a})` : `rgba(214,208,190,${a})`); g.addColorStop(1, dark ? 'rgba(58,56,46,0)' : 'rgba(214,208,190,0)'); x.fillStyle = g; x.fillRect(cx - r, cy - r, r * 2, r * 2); });
+        }
+        for (let i = 0; i < 9000; i++) { const g = 118 + Math.random() * 78; x.fillStyle = `rgba(${g},${g - 4},${g - 15},0.22)`; x.fillRect(Math.random() * w, Math.random() * h, 1 + Math.random() * 2, 1 + Math.random() * 2); }   // grit
+        for (let i = 0; i < 46; i++) {                               // rain streaks, running down the slope from either edge
+            const cy = Math.random() * h, len = 60 + Math.random() * 260, th = 2 + Math.random() * 7, left = Math.random() < 0.5, a = 0.07 + Math.random() * 0.12;
+            lapped(() => { const g = x.createLinearGradient(left ? 0 : w, 0, left ? len : w - len, 0); g.addColorStop(0, `rgba(44,42,34,${a})`); g.addColorStop(1, 'rgba(44,42,34,0)'); x.fillStyle = g; x.fillRect(left ? 0 : w - len, cy, len, th); });
+        }
+        for (let i = 0; i < 12; i++) {                               // moss and lichen
+            const cx = Math.random() * w, cy = Math.random() * h, rx = 14 + Math.random() * 34, ry = 20 + Math.random() * 60, a = 0.05 + Math.random() * 0.09;
+            lapped(() => { x.save(); x.translate(cx, cy); x.scale(rx, ry); const g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, `rgba(74,88,52,${a * 1.6})`); g.addColorStop(0.6, `rgba(74,88,52,${a})`); g.addColorStop(1, 'rgba(74,88,52,0)'); x.fillStyle = g; x.fillRect(-1, -1, 2, 2); x.restore(); });
+        }
+        // the joints between the slabs: three rows of slabs across, a new slab every 6 m along (thin, soft lines, a little uneven)
+        x.fillStyle = 'rgba(34,33,28,0.34)';
+        for (const u of [1 / 3, 2 / 3]) for (let y = 0; y < h; y += 4) x.fillRect(u * w + Math.sin(y * 0.05 + u * 9) * 0.8, y, 1.4, 4);
+        for (let k = 0; k < 3; k++) { const y = k * h / 3 + 2; x.fillRect(0, y, w, 1.6); x.fillStyle = 'rgba(226,220,204,0.16)'; x.fillRect(0, y + 1.6, w, 1.4); x.fillStyle = 'rgba(34,33,28,0.34)'; }
     }) });
     const railMat = new THREE.MeshStandardMaterial({ color: 0xd9d6cc, roughness: 0.85, side: THREE.DoubleSide });
     for (const flat of ctx.circuit.geo.extras.oval || []) {
@@ -207,18 +224,18 @@ function oldBanking(ctx) {
             if (s && lat < wall + 9 && lift < 6) { prev = null; continue; }               // beside today's track: nothing left of it here
             const rise = 2 * HALF * Math.tan(0.62 * smooth(0.0006, 0.0026, Math.abs(k[i])));
             const hl = 0.12 + lift + (k[i] < 0 ? rise : 0), hr = 0.12 + lift + (k[i] > 0 ? rise : 0), over = s && lat < wall + 1.2;   // 'over': the bridge itself
-            const row = { l: [x + nx * HALF, hl, z + nz * HALF], r: [x - nx * HALF, hr, z - nz * HALF], hl, hr, over, v: i * 6 / 4 };
+            const row = { l: [x + nx * HALF, hl, z + nz * HALF], r: [x - nx * HALF, hr, z - nz * HALF], hl, hr, over, v: i * 6 / 18 };
             mark.set(key(x, z), 1);
             if (prev) {
                 const uv = (u0, u1) => [u0, prev.v, u1, prev.v, u0, row.v, u1, row.v], down = (p, y) => [p[0], y, p[2]];
-                surf.add(prev.l, prev.r, row.l, row.r, uv(0, 2.3));
+                surf.add(prev.l, prev.r, row.l, row.r, uv(0, 1));
                 for (const e of ['l', 'r']) {
                     const h0 = prev['h' + e], h1 = row['h' + e];
                     // the wall down to the ground under each edge (on the bridge: just the deck's own depth)
-                    if (Math.max(h0, h1) > 0.4) { const b0 = prev.over || row.over ? h0 - 0.9 : -0.1, b1 = prev.over || row.over ? h1 - 0.9 : -0.1; surf.add(down(prev[e], b0), prev[e], down(row[e], b1), row[e], uv(0, Math.max(h0, h1) / 4)); }
+                    if (Math.max(h0, h1) > 0.4) { const b0 = prev.over || row.over ? h0 - 0.9 : -0.1, b1 = prev.over || row.over ? h1 - 0.9 : -0.1; surf.add(down(prev[e], b0), prev[e], down(row[e], b1), row[e], e === 'l' ? uv(Math.max(h0, h1) / (HALF * 2), 0) : uv(1 - Math.max(h0, h1) / (HALF * 2), 1)); }   // (a wall carries on the picture from the edge of the slope above it)
                     if (Math.max(h0, h1) > 1.2) rail.add(prev[e], down(prev[e], h0 + 0.75), row[e], down(row[e], h1 + 0.75));   // the old guard wall along a high edge
                 }
-                if (prev.over || row.over) under.add(down(prev.l, prev.hl - 0.9), down(prev.r, prev.hr - 0.9), down(row.l, row.hl - 0.9), down(row.r, row.hr - 0.9), uv(0, 2.3));   // the underside
+                if (prev.over || row.over) under.add(down(prev.l, prev.hl - 0.9), down(prev.r, prev.hr - 0.9), down(row.l, row.hl - 0.9), down(row.r, row.hr - 0.9), uv(0, 1));   // the underside
             }
             prev = row;
         }
