@@ -3,7 +3,8 @@
 //
 //   getAudio()        the sound system (made on the first tap; null while the app is hidden)
 //   audioOut()        where every sound must be sent (never straight to the speakers), so the volume and mute work
-//   playSound(name)   'click', 'go', 'back', 'rev', 'win', 'lose', 'low', 'high' (countdown), 'cheer', 'bigcheer', 'fanfare'
+//   playSound(name)   'click', 'go', 'back', 'rev', 'win', 'lose', 'low', 'high' (countdown), 'cheer', 'bigcheer', 'fanfare',
+//                     'flip' and 'deal' (the Driver Cards)
 //   stopLongSounds()  cut off a cheer or fanfare that is still playing (leaving a screen, pausing)
 //   FFVSound          { on, volume, setOn(bool), setVolume(1|2|3) }: remembered as ffv_raceSound and ffv_volume
 //
@@ -51,6 +52,14 @@
         gain.gain.setValueAtTime(.0001, t); gain.gain.exponentialRampToValueAtTime(vol, t + attack); gain.gain.exponentialRampToValueAtTime(.0001, t + dur);
         osc.connect(gain); gain.connect(dest); osc.start(t); osc.stop(t + dur + .03);
         osc.onended = () => { try { gain.disconnect(); } catch (e) { /* gone */ } };
+    }
+    // a soft swish of air (a card moving): a short burst of noise, sliding from one tone to another
+    function swish(dur, from, to, vol, delay = 0) {
+        const t = ctx.currentTime + delay, s = ctx.createBufferSource(), bp = ctx.createBiquadFilter(), g = ctx.createGain();
+        s.buffer = noiseBuf(); bp.type = 'bandpass'; bp.Q.value = 1.2; bp.frequency.setValueAtTime(from, t); bp.frequency.exponentialRampToValueAtTime(to, t + dur);
+        g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.3); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+        s.connect(bp); bp.connect(g); g.connect(master); s.start(t, Math.random() * 1.5, dur + 0.05);
+        s.onended = () => { try { g.disconnect(); } catch (e) { /* gone */ } };
     }
     // a crowd: a roar of filtered noise that swells and dies away, clapping, and a few whoops. size: 1 normal, 1.5 a big one
     function cheer(size = 1, delay = 0, seconds = 4.2) {
@@ -116,6 +125,8 @@
             case 'lose': tone({ freq: 220, to: 90, dur: .35, type: 'sawtooth', vol: .1 }); break;
             case 'low':  tone({ freq: 440, dur: .22, type: 'square', vol: .1, attack: .01 }); tone({ freq: 880, dur: .2, type: 'sine', vol: .05 }); break;       // countdown: 3, 2, 1
             case 'high': tone({ freq: 880, dur: .5, type: 'square', vol: .1, attack: .01 }); tone({ freq: 1760, dur: .45, type: 'sine', vol: .05 }); break;     // ... GO!
+            case 'flip':  swish(0.16, 900, 3200, 0.16); tone({ freq: 300, to: 520, dur: .09, type: 'triangle', vol: .06, delay: .1 }); break;   // a card turning over
+            case 'deal':  for (let i = 0; i < 3; i++) swish(0.07, 1800, 2600, 0.1, i * 0.09); break;                                           // cards sliding across the table
             case 'cheer': cheer(1); break;
             case 'bigcheer': cheer(1.5, 0, 5); break;
             case 'fanfare': fanfare(); break;
