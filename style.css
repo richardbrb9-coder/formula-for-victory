@@ -543,3 +543,13 @@ kbd { display: inline-grid; place-items: center; min-width: 32px; height: 34px; 
 .mt-f select { width: 100%; background: var(--bg); border: 1px solid var(--line-2); padding: 10px 6px; font-size: .9rem; font-weight: 700; color: var(--text); height: 42px; }
 @media (max-width: 900px) { .mt-row { grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); } .mt-row .mt-f.pat { grid-column: 1 / span 2; } .mt-row .mt-reset { grid-column: 3; } }
 @media (max-width: 480px) { .mt-row { grid-template-columns: 64px minmax(0, 1fr); } .mt-row .mt-f.pat { grid-column: 1 / -1; } .mt-row .mt-reset { grid-column: 1 / -1; } }
+
+/* Big enough for a child's finger: every button and box on the menu screens is at least 44 px each way (the racing
+   screen's own buttons are set above). Text is centred so the taller buttons look the same as before. */
+.units-btn, .install-btn, .chip-btn, .screen .opt, .screen .act-btn, .screen .link-btn:not(.inline), .screen .back-btn, .mt-more summary,
+.mt-f input[type=text], .mt-f input[type=number], .mt-f select { min-height: 44px; }
+.units-btn, .screen .opt { min-width: 44px; }
+.install-btn, .chip-btn, .screen .opt { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.screen .back-btn { display: inline-flex; align-items: center; }
+.mt-more summary { display: list-item; line-height: 32px; }
+.mt-f input[type=color] { width: 44px; height: 44px; }

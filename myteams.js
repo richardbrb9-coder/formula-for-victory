@@ -19,7 +19,7 @@
 'use strict';
 (function () {
     const FFV = window.FFV, TEAMS = FFV.TEAMS, SLOTS = TEAMS.length;
-    const MAX_FILE = 2 * 1024 * 1024, MAX_FILES = 30, MAX_ZIP = 40 * 1024 * 1024, BOX = 256;
+    const MAX_FILE = 2 * 1024 * 1024, MAX_FILES = 30, MAX_ZIP = 40 * 1024 * 1024, BOX = 256, MAX_PIXELS = 4096 * 4096;
     const CSV_NAME = 'teams.csv', MAX_CSV = 200 * 1024, MAX_ROWS = 50, MAX_NAME = 30;
     const KINDS = { svg: 'image/svg+xml', png: 'image/png', webp: 'image/webp' };
 
@@ -84,6 +84,8 @@
             im.onload = () => {
                 try {
                     const w0 = im.naturalWidth || BOX, h0 = im.naturalHeight || BOX, k = Math.min(BOX / w0, BOX / h0);
+                    // (a small file can still claim a gigantic picture, which would need gigabytes to open: never drawn)
+                    if (kind !== 'svg' && w0 * h0 > MAX_PIXELS) { end(no, new Error('big')); return; }
                     const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w0 * k)); c.height = Math.max(1, Math.round(h0 * k));
                     c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
                     const data = c.toDataURL('image/png');
@@ -149,7 +151,7 @@
         raw.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
         if (raw.length > MAX_FILES) { notes.extra += raw.length - MAX_FILES; raw.length = MAX_FILES; }
         const good = [];
-        for (const r of raw) { try { good.push({ name: r.name, tidy: tidyName(r.name), data: await toPng(r.bytes, extOf(r.name)) }); } catch (e) { notes.bad.push([r.name, 'broken']); } }
+        for (const r of raw) { try { good.push({ name: r.name, tidy: tidyName(r.name), data: await toPng(r.bytes, extOf(r.name)) }); } catch (e) { notes.bad.push([r.name, e && e.message === 'big' ? 'big' : 'broken']); } }
         return { good, notes };
     }
     // ---------- teams.csv: the whole set-up in one little table (made in any spreadsheet, or typed in a notes app) ----------
