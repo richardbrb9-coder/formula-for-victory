@@ -1,6 +1,6 @@
 // Formula for Victory: the championship's rules and record-keeping (no screens here: see championship.js for those).
 //
-// A season is five races, one on each circuit. Points go to the top ten in each race. The same ten teams and drivers
+// A season is five races, one on each circuit. Points go to the top ten in each race (nothing for 11th). The same eleven teams and drivers
 // (teams.js) race all season; you drive for one of them. The season is saved on the device after every race under
 // 'ffv_champ', so you can stop and carry on another day.
 //

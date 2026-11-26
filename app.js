@@ -60,6 +60,7 @@ const racing = () => document.body.classList.contains('racing');
 // show a screen (extra: something for that screen to know, e.g. the championship's 'after' the race view)
 function show(name, extra) {
     if (current === 'champ' && window.leaveChamp) window.leaveChamp();   // (stops the confetti and the fanfare)
+    if (current === 'teams' && name !== 'teams') FFV.myTeams.leave();
     current = name;
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === 'screen-' + name));
     document.querySelector('.nav-btn.home').classList.toggle('active', name === 'title');
@@ -69,6 +70,7 @@ function show(name, extra) {
     if (name === 'champ') renderChamp(extra);
     if (name === 'help') renderHelp();
     if (name === 'settings') renderSettings();
+    if (name === 'teams') FFV.myTeams.render();
     if (name === 'credits') renderCredits();
     window.scrollTo(0, 0);
 }
@@ -137,12 +139,12 @@ document.getElementById('circuit-grid').addEventListener('click', e => {
 // =====================================================================
 //  SETTING UP A RACE
 // =====================================================================
-const TEAMS = FFV.TEAMS;   // (the ten made-up teams and their drivers: see teams.js)
+const TEAMS = FFV.TEAMS;   // (the eleven made-up teams and their drivers: see teams.js)
 const opts = { laps: [3, 5].includes(store('laps', 3)) ? store('laps', 3) : 3, difficulty: ['easy', 'medium', 'hard'].includes(store('difficulty', 'easy')) ? store('difficulty', 'easy') : 'easy',
-    weather: 'sunny', team: Math.max(0, Math.min(9, store('team', 5) | 0)), quality: ['auto', 'low', 'medium', 'high'].includes(store('raceQuality', 'auto')) ? store('raceQuality', 'auto') : 'auto' };
+    weather: 'sunny', team: Math.max(0, Math.min(TEAMS.length - 1, store('team', 5) | 0)), quality: ['auto', 'low', 'medium', 'high'].includes(store('raceQuality', 'auto')) ? store('raceQuality', 'auto') : 'auto' };
 // the row of round team badges to choose from, and the line under it naming the one chosen
 function teamDots(active, kind) {
-    return TEAMS.map((t, i) => `<button class="team-dot ${i === active ? 'active' : ''}" data-${kind}="team" data-val="${i}" style="background:${t.paint};--stripe:${t.stripe}" aria-label="${escapeHtml(t.team)}" title="${escapeHtml(t.team)}"></button>`).join('');
+    return TEAMS.map((t, i) => `<button class="team-dot ${i === active ? 'active' : ''} ${FFV.logoUrl(t.id) ? 'has-logo' : ''}" data-${kind}="team" data-val="${i}" style="background:${t.paint};--stripe:${t.stripe}" aria-label="${escapeHtml(t.team)}" title="${escapeHtml(t.team)}">${FFV.logoUrl(t.id) ? `<img src="${FFV.logoUrl(t.id)}" alt="">` : ''}</button>`).join('');
 }
 const teamLine = i => `${escapeHtml(TEAMS[i].team)} <small>car ${TEAMS[i].number}</small>`;
 function renderSetup() {
@@ -176,7 +178,7 @@ function renderSetup() {
                 <p class="b-label">Graphics</p>
                 ${row('quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']])}
                 <div class="mode-btns">${trial ? '<button class="big-btn" data-go="trial">⏱ Start the time trial</button>' : '<button class="big-btn" data-go="race">🏁 Race</button>'}</div>
-                <p class="small" style="margin-top:10px">${trial ? 'Time trial: the track to yourself, chasing your own best lap. Beat it and a see-through ghost of your best lap races you.' : 'Race: ten cars, and you start at the back. How many can you pass?'}
+                <p class="small" style="margin-top:10px">${trial ? 'Time trial: the track to yourself, chasing your own best lap. Beat it and a see-through ghost of your best lap races you.' : 'Race: eleven cars, and you start at the back. How many can you pass?'}
                     <button class="link-btn inline" data-intent="${trial ? 'race' : 'trial'}">${trial ? 'Race here instead' : 'Do a time trial here instead'}</button></p>
             </div>
         </div>
@@ -202,7 +204,8 @@ function startRace(mode, o = {}) {
     veil.hidden = false;
     // (two frames' grace, so the "warming up" message is on screen before the circuit is built)
     requestAnimationFrame(() => requestAnimationFrame(() => {
-        (raceModule ? Promise.resolve(raceModule) : import('./race.js').then(m => (raceModule = window.__race = m)))
+        // (a family's own logos are painted onto the cars as the race is built, so they must have been read first)
+        Promise.race([FFV.logosReady, new Promise(r => setTimeout(r, 1500))]).then(() => raceModule ? raceModule : import('./race.js').then(m => (raceModule = window.__race = m)))
             .then(m => {
                 const ok = m.start({ circuit: o.circuit || chosen.data, mode, laps: o.laps || opts.laps, difficulty: o.difficulty || opts.difficulty, weather: o.weather || opts.weather,
                     team: o.team ?? opts.team, quality: opts.quality, champ: o.champ || null, onExit: o.onExit || (() => show('setup')) });
@@ -243,7 +246,7 @@ function renderHelp() {
                 <p>Tap <b>Watch replay</b> to see your race again from the TV cameras, bumps and all.</p>
                 <p class="small">In a time trial there are no rivals: a see-through ghost of your best lap races against you.</p></div>
             <div class="panel help-card wide"><h3>🏆 The championship</h3>
-                <p>A season is <b>five races</b>, one on each circuit, against the same nine drivers. You choose your team, how many laps each race has, and how quick the rivals are. You start every race at the back.</p>
+                <p>A season is <b>five races</b>, one on each circuit, against the same ten drivers. You choose your team, how many laps each race has, and how quick the rivals are. You start every race at the back.</p>
                 <p>The first ten home score points:</p>
                 <div class="points-row">${pts.map((p, i) => `<span class="pt ${i < 3 ? 'p' + (i + 1) : ''}"><small>${i + 1}${['st', 'nd', 'rd'][i] || 'th'}</small><b>${p}</b></span>`).join('')}</div>
                 <p>After each race you see who scored what and how the table has changed: <b class="up">▲</b> means a driver has moved up, <b class="down">▼</b> means down. Most points after five races wins the trophy.</p>
@@ -263,7 +266,8 @@ function renderSettings() {
         line('Engine sound', 'engine', store('raceEngine', true) !== false, [[true, 'On'], [false, 'Off']], 'Off keeps the other sounds but hushes your engine.') +
         line('Speed shown in', 'units', units, [['mph', 'MPH'], ['kmh', 'KM/H']]) +
         line('Driving help', 'help', store('raceHelp', true) !== false, [[true, 'On'], [false, 'Off']], 'Slows you for the corners and nudges you back onto the road.') +
-        line('Graphics', 'quality', opts.quality, [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], 'Auto picks for you. Choose Low if the racing feels jerky.');
+        line('Graphics', 'quality', opts.quality, [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], 'Auto picks for you. Choose Low if the racing feels jerky.') +
+        `<div class="set-row"><div class="set-label"><b>My teams</b><small>Give the teams your own names, colours and logos. They stay on this device only.</small></div><div class="opts"><button class="act-btn" data-screen="teams">🎨 My teams</button></div></div>`;
 }
 document.getElementById('settings').addEventListener('click', e => {
     const b = e.target.closest('[data-set]'); if (!b) return;
@@ -377,6 +381,8 @@ function drawTitleArt() {
 }
 window.addEventListener('resize', drawTitleArt);
 renderTitle(); if (document.fonts) document.fonts.ready.then(drawTitleArt);
+// a family's own team names or logos have changed (or have just been read): redraw whichever screen shows them
+document.addEventListener('ffv-teams', () => { if (racing()) return; if (current === 'setup') renderSetup(); if (current === 'champ') renderChamp('keep'); });
 
 // =====================================================================
 //  "INSTALL APP" BUTTON

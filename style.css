@@ -486,3 +486,52 @@ kbd { display: inline-grid; place-items: center; min-width: 32px; height: 34px; 
     .rr-medal { font-size: 1.05rem; margin: 0 0 2px; }
     .season-table td { padding: 5px 6px; }
 }
+
+/* ---------- a family's own team logos (myteams.js): beside names in the tables, and the My teams screen ---------- */
+.team-logo { display: inline-block; width: 2.1em; height: 1.5em; object-fit: contain; vertical-align: middle; margin: -0.2em 7px -0.1em -2px; pointer-events: none; }
+.pod-name .team-logo { margin-right: 5px; }
+.team-dot img { position: absolute; inset: 4px; width: calc(100% - 8px); height: calc(100% - 8px); object-fit: contain; z-index: 1; pointer-events: none; }
+.team-dot.has-logo { background: #f4f6f8 !important; } .team-dot.has-logo::after { display: none; }
+.mt-note { margin: 0 0 12px; padding: 10px 14px; background: rgba(0,229,255,.08); border-left: 4px solid var(--cyan); font-weight: 700; }
+.mt-load { display: grid; gap: 8px; justify-items: start; margin-bottom: 12px; }
+.mt-load .big-btn { font-size: 1.1rem; padding: 16px 30px; }
+.mt-load p { margin: 0; max-width: 720px; line-height: 1.45; }
+.mt-msg { font-weight: 700; color: var(--amber); min-height: 1.2em; }
+.mt-list { display: grid; gap: 8px; }
+.mt-row { display: grid; grid-template-columns: 64px minmax(0, 1.2fr) minmax(0, 1.2fr) 82px auto auto; gap: 8px 12px; align-items: end; padding: 10px 14px; }
+.mt-row.held { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(0,229,255,.35) inset; }
+.mt-logo { position: relative; width: 64px; height: 64px; padding: 5px; border-radius: 12px; border: 3px solid var(--c, var(--line-2)); border-bottom-color: var(--s, var(--line-2)); background: #eef0f3; display: grid; place-items: center; }
+.mt-logo img { max-width: 100%; max-height: 100%; object-fit: contain; pointer-events: none; }
+.mt-logo span { font-size: 1.6rem; color: #6E7785; }
+.mt-logo i { position: absolute; left: -7px; top: -7px; min-width: 22px; height: 22px; border-radius: 11px; background: var(--panel-2); border: 1px solid var(--line-2); color: var(--text); font: 700 .72rem var(--display); display: grid; place-items: center; }
+.mt-row.held .mt-logo { outline: 3px solid var(--cyan); outline-offset: 2px; }
+.mt-f { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mt-f > span { font: 700 .6rem var(--display); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.mt-f input[type=text], .mt-f input[type=number] { width: 100%; background: var(--bg); border: 1px solid var(--line-2); padding: 10px 10px; font-size: 1rem; font-weight: 700; color: var(--text); border-radius: 0; }
+.mt-f input:focus { outline: 2px solid var(--cyan); }
+.mt-f.cols div { display: flex; gap: 4px; }
+.mt-f input[type=color] { width: 38px; height: 42px; padding: 2px; background: var(--bg); border: 1px solid var(--line-2); }
+.mt-reset { align-self: end; padding: 11px 10px; white-space: nowrap; }
+.mt-held { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--cyan); }
+.mt-hint { margin: 10px 0 0; text-align: center; }
+.mt-foot { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 14px; }
+.act-btn:disabled { opacity: .4; cursor: default; }
+.big-btn:disabled { opacity: .4; cursor: default; }
+.mt-choose { margin-bottom: 12px; border-color: var(--amber); }
+.mt-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin: 10px 0 4px; }
+.mt-pick { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 6px; background: var(--panel-2); border: 2px solid var(--line-2); color: var(--muted); opacity: .55; min-width: 0; }
+.mt-pick.on { border-color: var(--lime); color: var(--text); opacity: 1; }
+.mt-pick img { width: 64px; height: 64px; object-fit: contain; background: #eef0f3; border-radius: 8px; padding: 4px; pointer-events: none; }
+.mt-pick span { font-size: .78rem; font-weight: 700; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mt-pick b { position: absolute; right: 4px; top: 4px; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--bg); border: 2px solid var(--line-2); color: #15171b; font-size: .9rem; }
+.mt-pick.on b { background: var(--lime); border-color: var(--lime); }
+.mt-count { font-weight: 800; color: var(--lime); } .mt-count.over { color: var(--amber); }
+@media (max-width: 900px) {
+    .mt-row { grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr); }
+    .mt-row .mt-f.num { grid-column: 1; } .mt-row .mt-f.cols { grid-column: 2; } .mt-row .mt-reset { grid-column: 3; justify-self: end; }
+}
+@media (max-width: 480px) {
+    .mt-row { grid-template-columns: 64px minmax(0, 1fr); }
+    .mt-row .mt-f.wide { grid-column: 2; } .mt-row .mt-logo { grid-row: span 2; }
+    .mt-row .mt-f.num { grid-column: 1; } .mt-row .mt-f.cols { grid-column: 2; } .mt-row .mt-reset { grid-column: 1 / -1; justify-self: start; }
+}

@@ -79,7 +79,7 @@
                 <div class="title-box">
                     <div class="title-flag" aria-hidden="true"></div>
                     <h1 class="title-logo">FORMULA<small>FOR</small><b>VICTORY</b></h1>
-                    <p class="title-tag">Grand Prix racing on real circuits. Ten cars on the grid. Can you take the chequered flag?</p>
+                    <p class="title-tag">Grand Prix racing on real circuits. Eleven cars on the grid. Can you take the chequered flag?</p>
                 </div>
                 <nav class="menu-cards" aria-label="Main menu">
                     <button class="menu-card champ" data-menu="champ"><span class="mc-icon" aria-hidden="true">🏆</span><span class="mc-text"><b>Championship</b><small id="mc-champ">Five races. One champion.</small></span></button>
@@ -130,6 +130,15 @@
             <div class="panel settings" id="settings"></div>
         </section>
 
+        <!-- MY TEAMS: a family's own names and logos, kept on this device only (see myteams.js) -->
+        <section id="screen-teams" class="screen">
+            <button class="back-btn" data-screen="settings">‹ Settings</button>
+            <div class="screen-head"><h1><span class="kicker">My teams</span>Your own names and logos</h1></div>
+            <div id="myteams"></div>
+            <input type="file" id="mt-files" multiple accept=".svg,image/svg+xml,.png,.webp,.zip" hidden>
+            <input type="file" id="mt-file" accept=".svg,image/svg+xml,.png,.webp" hidden>
+        </section>
+
         <!-- CREDITS -->
         <section id="screen-credits" class="screen">
             <button class="back-btn" data-screen="title">‹ Menu</button>
@@ -162,6 +171,7 @@
     <canvas class="party" id="party" aria-hidden="true" hidden></canvas>
 
     <script src="teams.js"></script>
+    <script src="myteams.js"></script>
     <script src="sound.js"></script>
     <script src="season.js"></script>
     <script src="app.js"></script>

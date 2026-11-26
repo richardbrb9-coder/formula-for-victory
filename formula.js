@@ -404,8 +404,13 @@ export function formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS }) {
         both(side => { const r = side === 'right', sq = U(0.09); for (let i = 0; i < 7; i++) for (let j = 0; j < 3; j++) { x.fillStyle = (i + j) % 2 ? '#111' : '#fff'; const v0 = stripV(0.52 + j * 0.055, r), v1 = stripV(0.575 + j * 0.055, r); x.fillRect(U(4.05) + i * sq, Math.min(Y(v0), Y(v1)), sq, Math.abs(Y(v1) - Y(v0))); } });
         kit = [7, 1, 2];
     }
-    both(side => { onStrip(x, d, W, H, Y, 3.12, 0.8, side, sticker(S(kit[0]), 0.5, 0.12)); onStrip(x, d, W, H, Y, 5.27, 0.55, side, sticker(S(kit[1]), 0.4, 0.1)); });
-    onTop(x, d, W, H, Y, 1.5, sticker(S(kit[2]), 0.3, 0.075));
+    // A family's own team logo (see myteams.js), if this device has one for the team: painted here, once, into the same
+    // picture as the rest of the livery (so it costs nothing while racing), on both sides of the engine cover and on the nose
+    // in place of the made-up sponsors there. d.logo is a picture that has already been loaded.
+    const logo = d.logo && (d.logo.naturalWidth || d.logo.width) ? d.logo : null;
+    const own = (wM, hM) => px => { const iw = logo.naturalWidth || logo.width, ih = logo.naturalHeight || logo.height, k = Math.min(wM * px / iw, hM * px / ih); x.drawImage(logo, -iw * k / 2, -ih * k / 2, iw * k, ih * k); };
+    both(side => { onStrip(x, d, W, H, Y, 3.12, 0.8, side, logo ? own(0.56, 0.2) : sticker(S(kit[0]), 0.5, 0.12)); onStrip(x, d, W, H, Y, 5.27, 0.55, side, sticker(S(kit[1]), 0.4, 0.1)); });
+    onTop(x, d, W, H, Y, 1.5, logo ? own(0.3, 0.2) : sticker(S(kit[2]), 0.3, 0.075));
 }
 // the race number (on the nose and on both sides of the fin) and the driver's tag (on the rear wing end plates)
 export function formulaMarks(x, d, W, H, Y, num, tag) {

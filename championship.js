@@ -16,7 +16,7 @@ let champCircuits = null;                                          // the list o
 let champShown = '';                                               // which of the screens is up: 'setup', 'hub', 'after' or 'final'
 
 const nameOf = (s, id) => id === s.team ? FFV.YOU : FFV.teamById(id).driver;
-const dot = id => `<span class="champ-dot" style="background:${FFV.teamById(id).paint}"></span>`;
+const dot = id => FFV.badge(id);   // (the team's colour dot, or a family's own logo for it: see myteams.js)
 const circuitOf = id => (champCircuits || []).find(c => c.id === id) || { id, name: id, flag: '', country: '' };
 const placeClass = p => p <= 3 ? 'pl' + p : '';
 const weatherFor = (s, i) => { const info = S.roundInfo(s, i), c = circuitOf(s.rounds[i]); return c.id === 'lasvegas' ? '🌙' : WEATHER_ICON[(info && info.weather) || 'sunny']; };
@@ -87,7 +87,7 @@ function renderChampSetup(el, old) {
     const tmp = S.newSeason({ team: t.id, laps: d.laps, difficulty: d.difficulty });
     el.innerHTML = `
         <div class="champ-head"><div><h1><span class="kicker">Championship</span>A new season</h1>
-            <p class="subtitle">Five races, one on each circuit, against the same nine drivers all season. Score points in every race: most points wins the trophy.</p></div></div>
+            <p class="subtitle">Five races, one on each circuit, against the same ten drivers all season. Score points in every race: most points wins the trophy.</p></div></div>
         <div class="champ-grid">
             <div class="panel">
                 <p class="b-label" style="margin-top:0">Your team for the season</p>

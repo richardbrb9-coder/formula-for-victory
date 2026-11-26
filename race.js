@@ -1,5 +1,5 @@
 // Formula for Victory: the racing (grown from the driving part of Supercar Legends).
-// Arcade driving, not a simulator. Ten single-seaters, real circuits traced from OpenStreetMap (see track.js and circuits/).
+// Arcade driving, not a simulator. Eleven single-seaters, real circuits traced from OpenStreetMap (see track.js and circuits/).
 import * as THREE from './lib/three.module.min.js';
 import * as SC from './scenery.js';
 import { Effects } from './effects.js';
@@ -25,7 +25,7 @@ const wrapAngle = a => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.
 const lineAt = d => T.lineAt(d);
 const pathAt = (d, extraOffset = 0, lineScale = 0.9) => T.pathAt(d, extraOffset, lineScale);
 // the starting grid: two staggered columns behind the line [metres behind the line, metres from the middle of the road]
-const GRID = Array.from({ length: 10 }, (_, k) => [-12 - k * 8, k % 2 ? -3.2 : 3.2]);
+const GRID = Array.from({ length: window.FFV.TEAMS.length }, (_, k) => [-12 - k * 8, k % 2 ? -3.2 : 3.2]);
 function buildTrack(scene) {
     const made = buildTrackMeshes(T, GRID), group = made.group, b = T.box;
     const bounds = { minX: b.minX - 260, maxX: b.maxX + 260, minZ: b.minZ - 260, maxZ: b.maxZ + 260 };
@@ -94,7 +94,7 @@ function makeRacer(design, factor, isPlayer) {
     return racer;
 }
 // A rival seen from a distance: the whole car as ONE simple shape, each part in its own plain colour. A full car is about
-// forty separate pieces for the tablet to draw; with nine rivals that adds up, so only the cars near you are drawn in full.
+// forty separate pieces for the tablet to draw; with ten rivals that adds up, so only the cars near you are drawn in full.
 const mapColours = new Map(), pix = document.createElement('canvas'); pix.width = pix.height = 1;
 function averageColour(tex) {
     if (mapColours.has(tex.uuid)) return mapColours.get(tex.uuid);
@@ -158,12 +158,12 @@ function showDetail(r, full) {
     r.fullOn = full; r.far.visible = !full;
     r.model.group.visible = full;
 }
-// The ten made-up teams and their drivers live in teams.js (the one place their names, colours and numbers are kept).
+// The eleven made-up teams and their drivers live in teams.js (the one place their names, colours and numbers are kept).
 export const TEAMS = window.FFV.TEAMS, YOU = window.FFV.YOU;
 function teamDesign(i) {
     const k = i % TEAMS.length, t = TEAMS[k];
     const d = applyPreset({ ...DEFAULT }, 'formula');
-    return { ...d, name: t.team, driver: t.driver, teamIdx: k, paint: t.paint, stripeColour: t.stripe, paint2: t.paint2, caliper: t.stripe, livery: ['rally', 'endurance', 'gt'][i % 3], number: String(t.number), finish: ['gloss', 'metallic', 'gloss'][i % 3], tag: '' };
+    return { ...d, name: t.team, driver: t.driver, teamIdx: k, logo: window.FFV.logoImage ? window.FFV.logoImage(t.id) : null, paint: t.paint, stripeColour: t.stripe, paint2: t.paint2, caliper: t.stripe, livery: ['rally', 'endurance', 'gt'][i % 3], number: String(t.number), finish: ['gloss', 'metallic', 'gloss'][i % 3], tag: '' };
 }
 const ordinal = n => n + (['th', 'st', 'nd', 'rd'][(n % 100 > 10 && n % 100 < 14) ? 0 : n % 10] || 'th');
 
@@ -179,7 +179,7 @@ let qualitySetting = store('raceQuality', 'auto'), quality = qualitySetting === 
 // 'auto': the level this device settled on last time, or a first guess
 function autoQuality() { const q = store('autoLevel', null); return SC.QUALITY[q] ? q : SC.guessQuality(); }
 let world = null, player = null, rivals = [], ghost = null, mode = 'race', difficulty = 'medium';
-const fieldSize = 9;                               // nine rivals: a grid of ten
+const fieldSize = TEAMS.length - 1;                // ten rivals: a grid of eleven
 let lapsChosen = 3, playerTeam = 5, onExit = null; // set by the menus (see start)
 let champ = null;                                 // a championship race: { round, of, field, points, onFinish } (see start)
 let race = null;                                  // { phase: 'grid'|'lights'|'go'|'done', t, lightsT, results }
@@ -558,8 +558,8 @@ function positionOf(r) {
 }
 // Which rivals are drawn in full: only the few nearest the camera, and only within fullDetailAt() metres (a car already
 // drawn in full gets a few metres' head start, so two cars side by side don't keep swapping). In a bunched-up pack at
-// the first chicane this keeps a tablet from having to draw ten full cars at once.
-const MAX_FULL = { low: 2, medium: 3, high: 9 };
+// the first chicane this keeps a tablet from having to draw eleven full cars at once.
+const MAX_FULL = { low: 2, medium: 3, high: 10 };
 let detailOrder = [];
 function chooseDetail() {
     if (!camera) return;
@@ -632,7 +632,7 @@ function onPlayerLap(lapTime) {
     if (best == null || lapTime < best) { storeSet(key, lapTime); msg += ' · New best lap!'; window.playSound && window.playSound('win'); }
     if (mode === 'trial') {
         const g = store('ghost_' + TRACK.id, null);
-        if (!g || lapTime < g.time) storeSet('ghost_' + TRACK.id, { time: lapTime, frames: race.recording, design: player.design });
+        if (!g || lapTime < g.time) storeSet('ghost_' + TRACK.id, { time: lapTime, frames: race.recording, design: { ...player.design, logo: null } });
         race.recording = [];
         // replay the best ghost from the start of the next lap
         setupGhostFromStore();
@@ -681,6 +681,8 @@ function classify() {
     race.raceTime = t0; race.ff = false; race.ffMs = performance.now() - clock;   // (how long the working-out took: for testing)
     return rows;
 }
+// a team's mark beside its name: its colour dot, or a family's own logo for it (see myteams.js)
+const badge = row => window.FFV.badge ? window.FFV.badge(TEAMS[row.teamIdx].id) : `<span class="champ-dot" style="background:${row.colour}"></span>`;
 const PODIUM_BTN = '<button class="act-btn ghost pod-only" data-race="podium">🏁 Podium</button>';
 function finishRace() {
     race.phase = 'done'; race.tapeEnd = race.raceTime + 3;     // keep filming for a few seconds after the line
@@ -702,7 +704,7 @@ function finishRace() {
         : '<button class="big-btn" data-race="again">Race again</button><button class="act-btn" data-race="replay">🎬 Watch replay</button><button class="act-btn ghost" data-race="menu">Menu</button>';
     const extra = (medal ? `<p class="rr-medal">${medal}</p>` : '') + (C ? `<p class="rr-points">${gained ? `+${gained} point${gained === 1 ? '' : 's'}` : 'No points this time'}</p>` : '');
     race.sheet = { kicker, title, extra, actions, more: '📋 Results' };
-    const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td><span class="champ-dot" style="background:${row.colour}"></span>${escapeHtml(row.name)} <small>${escapeHtml(row.team)}</small></td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td>${C && C.points ? `<td class="pts">${C.points[i] ? '+' + C.points[i] : ''}</td>` : ''}</tr>`).join('');
+    const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td>${badge(row)}${escapeHtml(row.name)} <small>${escapeHtml(row.team)}</small></td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td>${C && C.points ? `<td class="pts">${C.points[i] ? '+' + C.points[i] : ''}</td>` : ''}</tr>`).join('');
     el.innerHTML = `<div class="rr-box champ-box"><span class="kicker">${kicker}</span><h2>${title}</h2>${race.sheet.extra}
         <table class="champ-table"><thead><tr><th></th><th>Driver</th><th>Race time</th><th>Best lap</th>${C && C.points ? '<th>Points</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
         <div class="rr-actions">${actions}${PODIUM_BTN}</div></div>`;
@@ -766,7 +768,7 @@ function startPodium() {
     podiumScene();
     // the sheet under the cars: who came where, each lap and the race time. Second, first, third, the same way round as the steps.
     const card = i => { const row = top[i]; if (!row) return '<div></div>';
-        return `<div class="pod-card p${i + 1} ${row.k === 0 ? 'me' : ''}" style="--c:${row.colour}"><div class="pod-pos">${ordinal(i + 1)}</div><div class="pod-name"><span class="champ-dot" style="background:${row.colour}"></span>${escapeHtml(row.name)}</div>${lapRows(row)}</div>`; };
+        return `<div class="pod-card p${i + 1} ${row.k === 0 ? 'me' : ''}" style="--c:${row.colour}"><div class="pod-pos">${ordinal(i + 1)}</div><div class="pod-name">${badge(row)}${escapeHtml(row.name)}</div>${lapRows(row)}</div>`; };
     const mine = rows[you], S = race.sheet;
     const own = you >= 3 ? `<div class="pod-you"><b>You · ${ordinal(you + 1)}</b>${mine.laps.map((t, i) => `<span>Lap ${i + 1} <b>${fmtTime(t)}</b></span>`).join('')}<span>Total <b>${fmtTime(mine.total)}</b></span></div>` : '';
     const el = document.getElementById('race-result'), sheet = document.createElement('div'); sheet.className = 'pod-sheet';
@@ -1599,7 +1601,7 @@ function init() {
 }
 // Start a race or a time trial. opts: { circuit (its data), mode: 'race' | 'trial', laps, difficulty, weather, team, onExit }
 // onExit(finished) is called on leaving: finished is true after the chequered flag, false if the race was given up.
-// A championship race also passes champ: { round, of, field (the nine rivals' team numbers, front of the grid first),
+// A championship race also passes champ: { round, of, field (the ten rivals' team numbers, front of the grid first),
 // points (for 1st, 2nd, ...), onFinish(rows) }: onFinish gets [{ team, total, best }] in finishing order, at the flag.
 // Returns false if this device can't show 3D.
 export function start(opts) {

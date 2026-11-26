@@ -8,6 +8,7 @@ const CORE_FILES = [
     './style.css',
     './app.js',
     './teams.js',
+    './myteams.js',
     './sound.js',
     './season.js',
     './championship.js',

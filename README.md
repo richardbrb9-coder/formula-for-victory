@@ -15,6 +15,7 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 | --- | --- |
 | `index.html`, `style.css`, `app.js` | The app: title and main menu, choose a circuit, set up a race, How to play, Settings, credits, Install button |
 | `teams.js` | **The one place** for every team name, driver name, team colour and car number |
+| `myteams.js` | My teams: a family's own names, colours and logos, kept on their device only |
 | `season.js` | The championship's rules: the order of the races, the points, the tables, saving and mending a season |
 | `championship.js` | The championship's screens: a new season, the season so far, after each race, the champion |
 | `sound.js` | The volume control every sound goes through, menu taps, countdown beeps, the crowd and the fanfare |
@@ -40,9 +41,24 @@ bridge) and Las Vegas (a street circuit, always raced at night).
   change one, change it there. Never change a team's `id`: saved seasons remember teams by it.
 - All of them are made up, and must stay made up: no real teams, drivers, sponsors or brands, and never the name of a
   real racing series. Drivers are only ever shown in a helmet.
-- A device can keep its own names (for a renaming screen later, which does not exist yet): `FFV.rename('apex', { team,
-  driver })` saves them under `ffv_names`; `FFV.resetNames()` goes back to the table. Names are cleaned and cut to 24
-  letters, and are always escaped where they are shown.
+- There are eleven teams, so eleven cars on the grid. Add a team to the table and the grid, the results, the points
+  tables and the championship all follow (points still go to the top ten only).
+
+## My teams (`myteams.js`): a family's own names and logos, on their own device only
+
+- Settings → My teams lets a family rename the eleven teams and drivers, change car numbers and colours, and load a
+  logo picture for each team from the tablet's own files (several at once, or one zip of them).
+- **Nothing a family types or loads is ever part of this app.** Names, numbers and colours are kept in the browser's
+  storage (`ffv_names`); logos in the browser's own database (`ffv_teams`). They are never uploaded, never in this
+  repository, never in the service worker's saved files. The game everyone downloads has the made-up names in
+  `teams.js` and no logos. **Never put a real team's name or logo in the code, the tests, the pictures or a commit.**
+- Safety: a loaded file is never put into the page as markup. It is opened only as a picture (an `<img>` from a blob
+  address, where a script inside an SVG cannot run), drawn onto a canvas no bigger than 256 pixels, and only that PNG
+  is kept. Limits: 2 MB a file, 30 files, zips opened in the browser with `DecompressionStream` (no library).
+- Logos show beside names in every table (`FFV.badge`) and are painted into each car's livery picture once, as the
+  race is built (`formulaTeam` in `formula.js`): no extra things to draw while racing.
+- "Clear my teams" (tap twice) wipes the names, colours and logos. `FFV.resetNames()` does the names alone.
+- Test with your own plain shapes (a coloured square with "T1" on it), never with real logos.
 
 ## The championship
 
@@ -53,7 +69,7 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 - A race you leave part-way was never saved, so it starts again from the grid. Recording a race only ever fills in the
   next race of the season, so nothing can be counted twice. `check()` mends old or damaged saves.
 - The rivals' places on the grid come from each driver's `pace` in `teams.js` plus some luck (`grid()`); the cars
-  themselves are as quick as in a single race. With ten teams of one car each, the teams' table follows the drivers'.
+  themselves are as quick as in a single race. With eleven teams of one car each, the teams' table follows the drivers'.
 - Testing: `window.__autopilot = true` (or `__kidbot`), `__noGridCam = true` and `__timeScale = 4` play a race quickly.
   Keep `__timeScale` at 4 or less: higher than that the cars' springs go wrong and the bodies vanish from the podium.
 
@@ -128,7 +144,8 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 - Made-up teams, drivers and sponsors only (all in `teams.js`). No real series, team, sponsor, hotel or company names or logos. Real place
   names are fine. A real corner that is named after a sponsor gets a plain name here instead (see `suzuka.js`).
 - Crash damage changes how a car looks, never how it drives. Weather never changes grip.
-- Everything saved on the device starts with `ffv_` (the owner's other apps share the same web address).
+- Everything saved on the device starts with `ffv_` (the owner's other apps share the same web address), and so does
+  the logos' database.
 - `sw.js`: bump `CACHE_NAME` on every change; it only ever deletes caches starting `formula-for-victory-`.
 - Keep the number of separate things drawn low (tablets): build scenery, then bake it with `SC.mergeStatic` (one mesh per
   material), share materials between copies (`shareMaterials` in `circuits/common.js` does it for buildings made one at a time, like
