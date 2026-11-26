@@ -147,9 +147,10 @@ export function updateSuspension(r, dt, road) {
     if (s.accel < -7 && r.v > 15) s.heat = Math.min(1, s.heat + dt * (-s.accel - 7) * 0.045);
     else s.heat = Math.max(0, s.heat - dt * 0.16);
     const bm = r.model.mats.brake; if (bm && bm.emissive) bm.emissiveIntensity = s.heat * s.heat * 3.2;
-    // brake lights: brighter while the car is slowing down hard (so you can see the car in front braking)
+    // brake lights: brighter while the car is slowing down hard (so you can see the car in front braking). Cars that
+    // carry a real brake signal (r.tails, set in race.js) light from that instead, so a replay shows the actual pedal.
     const tl = r.model.mats.tail;
-    if (tl) { if (s.tailBase == null) s.tailBase = tl.emissiveIntensity; const want = s.accel < -4 && r.v > 2 ? 1.7 : 1; s.tailK = (s.tailK || 1) + (want - (s.tailK || 1)) * Math.min(1, dt * 14); tl.emissiveIntensity = s.tailBase * s.tailK; }
+    if (tl && !r.tails) { if (s.tailBase == null) s.tailBase = tl.emissiveIntensity; const want = s.accel < -4 && r.v > 2 ? 1.7 : 1; s.tailK = (s.tailK || 1) + (want - (s.tailK || 1)) * Math.min(1, dt * 14); tl.emissiveIntensity = s.tailBase * s.tailK; }
     // the spinning wheels blur into a soft disc at speed
     const blur = r.model.mats.spinBlur; if (blur) { blur.opacity = Math.max(0, Math.min(0.5, (Math.abs(r.v) - 9) / 45)); blur.visible = blur.opacity > 0.02; }
     // the Formula racer's links: each corner's set is one piece, sheared so that its inner ends ride with the body

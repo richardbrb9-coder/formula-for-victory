@@ -1267,7 +1267,7 @@ function buildMaterials(design, lite = false) {
         intake: new THREE.MeshStandardMaterial({ color: 0x0b0c0f, roughness: 0.7, side: THREE.DoubleSide }),
         amber: new THREE.MeshStandardMaterial({ color: 0xff8a00, emissive: 0xff6a00, emissiveIntensity: 0.6 }),
         head: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xdfeaff, emissiveIntensity: 1.2 }),
-        tail: new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a10, emissiveIntensity: 1.4 })
+        tail: Object.assign(new THREE.MeshStandardMaterial({ color: 0x550000, emissive: 0xff1a10, emissiveIntensity: 1.4 }), { userData: { brakeLight: true } })
     };
 }
 // Combine all the meshes under 'root' that share a material into one mesh each (fewer things to draw = smoother on tablets).
