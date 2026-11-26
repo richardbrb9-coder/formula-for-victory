@@ -7,9 +7,10 @@
 import { GEO } from './lasvegas.geo.js';
 import { lasVegasScenery } from './lasvegas-scenery.js';
 
-// the light of a floodlit street at night (the 'sun' here is the glow of the floodlights from above), in clear weather,
-// and under cloud, rain or snow: the same lights, with the sky and the haze changed
-const FLOODLIT = { sunEl: 64, sun: 0.62, sunColor: 0xeef1ff, hemi: 0.46, hemiSky: 0xd6dcf2, hemiGround: 0x4a443e, env: 0.7, exposure: 1.08, grade: [1.03, 1.0, 1.05], sat: 1.14 };
+// the light of a floodlit street at night (the 'sun' here is the glow of the floodlights from above: as strong as
+// daylight on the road, the cars and the grandstands, while the buildings, which are dark, stay dark), in clear
+// weather, and under cloud, rain or snow: the same lights, with the sky and the haze changed
+const FLOODLIT = { sunEl: 64, sun: 2.4, sunColor: 0xeef1ff, hemi: 1.15, hemiSky: 0xd6dcf2, hemiGround: 0x4a443e, env: 0.7, exposure: 1.08, grade: [1.03, 1.0, 1.05], sat: 1.14 };
 
 export const LASVEGAS = {
     id: 'lasvegas', name: 'Las Vegas', title: 'Las Vegas Strip Circuit', country: 'USA', flag: '🇺🇸',
@@ -22,7 +23,7 @@ export const LASVEGAS = {
     widths: [[5990, 170, 14], [3210, 5050, 15]],
     elevation: null,            // the valley floor: flat
     tightWalls: true,           // a street circuit: the camera stays between the walls, and the rivals queue instead of barging
-    heliHeight: 46,
+    heliHeight: 50,             // (the helicopter camera in replays flies above the buildings along the road)
     // between the road and the wall: a metre of asphalt, concrete blocks and a catch fence
     runoff: { w: 1.0, surface: 'asphalt', barrier: 'concrete', fence: true },
     zones: [
@@ -65,9 +66,9 @@ export const LASVEGAS = {
         id: 'lasvegas', sky: 'night', haze: 0x3a2b3d,
         looks: {
             night: { ...FLOODLIT, haze: 0x3a2b3d, tint: [0.7, 0.72, 0.95], hazeTop: 20, fog: [240, 1500] },
-            cloudy: { ...FLOODLIT, sun: 0.5, haze: 0x45384a, hazeTop: 34, top: 0x1b1722, fog: [200, 1200] },                           // low cloud lit from below by the city
-            rain: { ...FLOODLIT, sun: 0.48, hemi: 0.4, haze: 0x372f40, hazeTop: 40, top: 0x14121b, fog: [130, 800], sat: 1.06 },
-            snow: { ...FLOODLIT, sun: 0.5, haze: 0x5a5262, hazeTop: 40, top: 0x2a2632, fog: [110, 700], sat: 1.0 }
+            cloudy: { ...FLOODLIT, sun: 2.2, haze: 0x45384a, hazeTop: 34, top: 0x1b1722, fog: [200, 1200] },                           // low cloud lit from below by the city
+            rain: { ...FLOODLIT, sun: 2.0, hemi: 1.05, haze: 0x372f40, hazeTop: 40, top: 0x14121b, fog: [130, 800], sat: 1.06 },
+            snow: { ...FLOODLIT, sun: 2.0, haze: 0x5a5262, hazeTop: 40, top: 0x2a2632, fog: [110, 700], sat: 1.0 }
         },
         horizon: { top: 9, bottom: -3, hazeTop: 1.1, hazeStrength: 0.55, layers: [
             { kind: 'ridge', height: 3.4, freq: 3, seed: 41, colour: 0x8a7f96, haze: 0.5, sharp: 1.4, floor: 0.3, facets: 0.5 },     // the desert mountains all round the valley

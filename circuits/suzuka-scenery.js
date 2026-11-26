@@ -23,7 +23,7 @@ const BRAKING = [470, 2100, 2700, 3600, 5190];                                  
 const PITS = { from: 5440, to: 440, front: 27, deep: 78, groups: [5650, 5700, 5750, -4], sections: 5 };   // the pit building: four blocks of five garages, stepping down the hill
 const PARK = { d: 5690, out: 150, w: 250, dp: 150 };                              // the amusement park, behind the main grandstand
 const WHEEL = { x: 35, z: -38, r: 30, hub: 35 };                                  // the big wheel: where it stands in the park (metres along it, and from its middle towards the track)
-const CELL = 12, MARGIN = 320, VERGE = 2, FAR_Y = 17, DROP = 0.12;
+const CELL = 12, MARGIN = 320, VERGE = 2, FAR_Y = 17, DROP = 0.14;
 
 export function suzukaScenery(ctx) {
     const { T, group } = ctx, { samples, N, trackLen: L } = T, dens = ctx.quality.density, X = ctx.circuit.crossover;
@@ -123,11 +123,11 @@ export function suzukaScenery(ctx) {
             if (s.deck || onRamp(i % N)) return null;
             const wall = wallOf(s, side); let a = wall + VERGE, b = a + 3, c = a + 9;
             if (Math.sign(s.ks) === side) { const cap = Math.max(wall + 0.4, 0.85 / Math.max(kMax(i % N), 1e-4)); a = Math.min(a, cap); b = Math.min(b, cap + 0.2); c = Math.min(c, cap + 0.4); }   // (the inside of a tight corner: no room for more)
-            const pts = [[side * c, -7], [side * b, -1.3], [side * a, -0.05], [side * s.hw, -0.05]];
+            const pts = [[side * c, -7], [side * b, -1.3], [side * a, -0.07], [side * s.hw, -0.07]];
             return side > 0 ? pts : pts.reverse();
         };
-        for (let i0 = 0; i0 < N; i0 += 200) {
-            const g = new Geo(), i1 = Math.min(N, i0 + 200);
+        for (let i0 = 0; i0 < N; i0 += 500) {   // (in six long pieces: fewer separate things for a tablet to draw)
+            const g = new Geo(), i1 = Math.min(N, i0 + 500);
             for (const side of [1, -1]) sweep(T, g, i0, i1, 2, (s, i) => prof(s, i, side), (q, d, off) => [off / 6, d / 6]);
             const m = g.mesh(vergeMat); if (m) { m.receiveShadow = true; m.userData.always = true; group.add(m); }
         }
@@ -228,7 +228,7 @@ export function suzukaScenery(ctx) {
                 m.makeTranslation(Math.cos(a) * (WHEEL.r + 0.1), Math.sin(a) * (WHEEL.r + 0.1), 0); cabins.setMatrixAt(k, m); cabins.setColorAt(k, col.set(bright[k % bright.length]));
             }
             parts.add(spokes, cabins);
-            const hub = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 4.2, 14).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xE10600, roughness: 0.5 })); parts.add(hub);
+            const hub = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 4.2, 14).rotateX(Math.PI / 2), white); parts.add(hub);
             const merged = SC.mergeStatic([parts]); merged.children.forEach(o => { o.castShadow = false; }); wheel.add(merged);
             mount.userData.far = 1500; mount.userData.noProbe = true; group.add(mount);
             // its legs: two A-frames, one each side of the wheel
@@ -256,6 +256,8 @@ export function suzukaScenery(ctx) {
         for (const [lx, lz, r] of [[-25, -38, 8], [-62, -46, 6.5], [70, 50, 7], [-100, -42, 7.5], [-10, 48, 6]]) { const [x, z] = local(lx, lz); drum(x, z, r, y, y + 3, [0.96, 0.94, 0.88], 10); cone(x, z, r + 0.8, y + 3, r * 0.75, [pick([[0.9, 0.2, 0.2], [0.15, 0.5, 0.85], [0.95, 0.65, 0.1], [0.3, 0.7, 0.35]]), [0.98, 0.96, 0.9]], 10); }   // big tents
         for (let k = 0; k < 16; k++) { const [x, z] = local(-112 + k * 15 + R(-2, 2), k % 2 ? 9 : -9); props.box(x, z, park.heading, 5, 4, y, y + 2.8, noUv, [0.95, 0.94, 0.9]); props.box(x, z, park.heading, 5.8, 4.8, y + 2.8, y + 3.3, noUv, pick([[0.9, 0.2, 0.2], [0.15, 0.5, 0.85], [0.95, 0.65, 0.1], [0.3, 0.7, 0.35], [0.6, 0.35, 0.8]])); }   // stalls along the main path
     }
+    // a concrete footing under every grandstand (the road slopes, and a stand is level: this fills the gap at its lower end)
+    for (const [d, side, len, rows, gap] of STANDS) { const sm = at(d), deep = rows * 0.9 + 1.6, p = spot(d, side, wallOf(sm, side) + gap + deep / 2 - 0.3); props.box(p.x, p.z, p.heading, len + 0.8, deep, p.y - 3, p.y - 0.02, noUv, [0.62, 0.63, 0.65], false); }
     // the teams' trucks in the paddock, behind the garages
     {
         const cols = [[0.95, 0.95, 0.95], [0.12, 0.23, 0.54], [0.88, 0.1, 0.1], [0.16, 0.18, 0.22], [1, 0.7, 0], [0, 0.66, 0.42]];

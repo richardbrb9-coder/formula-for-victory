@@ -709,6 +709,7 @@ function podiumScene() {
         if (r.susp) { r.susp.lastV = 0; r.susp.lastH = r.heading; }
         for (const w of r.model.wheels) w.rotation.y = (w.userData.side < 0 ? Math.PI : 0) + (w.userData.front ? r.steer : 0);
     });
+    podiumLamps(true);
     if (headlight && headlight.visible) {   // at night: the headlight and the lamp glow light the podium instead
         headlight.position.set(at.x + c * 13, at.y + 6, at.z - sn * 13); headlight.target.position.set(at.x, at.y + 0.8, at.z); headlight.target.updateMatrixWorld();
         carGlow.position.set(at.x + c * 2, at.y + 5, at.z - sn * 2);
@@ -738,8 +739,11 @@ function startPodium() {
         <div class="rr-actions">${S.actions}<button class="act-btn ghost" data-race="results">${S.more}</button></div>`;
     el.appendChild(sheet); el.classList.add('has-podium', 'podium'); el.hidden = false;
 }
+// (on a floodlit night circuit no headlight follows your car, but the podium still gets its two lamps)
+function podiumLamps(on) { if (headlight && TRACK && TRACK.floodlit && timeOfDay === 'night') headlight.visible = carGlow.visible = on; }
 // leave the podium for good (a new race, or back to the menu)
 function leavePodium() {
+    podiumLamps(false);
     if (podium) podium.group.visible = false;
     if (camera) camera.clearViewOffset();
     const st = document.getElementById('race-stage'); if (st) st.classList.remove('podium-on');
@@ -813,6 +817,7 @@ function startReplay() {
     race.replay = { t: 0, shot: -1, shotT: 0, cam: null, saveCam: camMode, hit: 0 };
     camMode = 0; applyCameraView();
     if (race.podiumAt != null) race.podiumAt = 0;                    // (the podium then follows straight after the replay)
+    podiumLamps(false);
     if (race.podium) { podium.group.visible = false; camera.clearViewOffset(); document.getElementById('race-stage').classList.remove('podium-on'); }
     for (const c of [player, ...rivals]) { c.holder.visible = true; dmg.reset(c); }   // the cars start the replay undamaged: each bump comes back at its moment
     dmg.clearPieces();

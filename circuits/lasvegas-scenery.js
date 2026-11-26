@@ -86,7 +86,7 @@ export function lasVegasScenery(ctx) {
                 for (let j = 0; j <= COLS; j++) {
                     const lat = -s.wr + (s.wl + s.wr) * j / COLS; let a = 0.02;
                     for (const [ld, side] of lamps) { const dd = wrapD(s.d - ld, L), c = side * s.hw * 0.4; a += 0.52 * Math.exp(-(dd * dd) / 170) * (0.45 + 0.55 * Math.exp(-((lat - c) ** 2) / (s.hw * s.hw * 1.3))); }
-                    g.pos.push(s.p.x + s.n.x * lat, s.p.y + 0.05, s.p.z + s.n.z * lat); g.col.push(0.62, 0.59, 0.5, Math.min(0.6, a)); g.uv.push(0, 0);
+                    g.pos.push(s.p.x + s.n.x * lat, s.p.y + 0.05, s.p.z + s.n.z * lat); g.col.push(0.25, 0.235, 0.2, Math.min(0.6, a));   // (measured: with the film effects and without, the road comes out the same) g.uv.push(0, 0);
                 }
                 if (i > i0) g.quadRow(base - COLS - 1, base, COLS + 1, false);
             }
@@ -187,7 +187,8 @@ export function lasVegasScenery(ctx) {
             if (Math.abs(s.ks) > 0.012 || Math.abs(at(d).ks) > 0.012 || Math.abs(at(d + w).ks) > 0.012) { d += 14; continue; }      // (not round the corners: the walls of a long block would cut across the road)
             if (side > 0 && inZone(mid, PITS.from - 60, PITS.to + 120)) { d += 20; continue; }                                         // (the pits and the paddock)
             if (side > 0 && inZone(mid, 1520, 2480) || side < 0 && inZone(mid, 1130, 1720)) { d += 20; continue; }                      // (nothing between the road and the globe)
-            const out = Math.max(wallOf(s, side), wallOf(at(d), side), wallOf(at(d + w), side)) + PAVE + R(1.5, strip ? 9 : 5) + dp / 2, p = spot(mid, side, out), pts = footprint(p.x, p.z, p.heading, w, dp);
+            const tall = !strip && Math.random() < 0.16;                                                                              // (a tall one stands further back, clear of the helicopter camera in replays)
+            const out = Math.max(wallOf(s, side), wallOf(at(d), side), wallOf(at(d + w), side)) + PAVE + R(1.5, strip ? 9 : 5) + (tall ? 13 : 0) + dp / 2, p = spot(mid, side, out), pts = footprint(p.x, p.z, p.heading, w, dp);
             if (!isFree(pts, PAVE + 0.6)) { d += 9; continue; }
             mark(footprint(p.x, p.z, p.heading, w, dp, 2));
             if (strip) {
@@ -201,7 +202,7 @@ export function lasVegasScenery(ctx) {
                 signBoard(p.x - (dp / 2 + 0.3) * sn, p.z - (dp / 2 + 0.3) * c, p.heading, Math.min(w * 0.5, 34), Math.min(w * 0.5, 34) / 4.1, 8, (signNo + 5) % SIGNS.length);
                 signNo++;
             } else {
-                const tall = Math.random() < 0.16, floors = tall ? Math.round(R(14, 26)) : Math.round(R(2, 9)), kind = floors <= 3 ? pick([SHOP, NEON, GARAGE]) : pick([HOTEL, HOTEL, GLASS, GARAGE, GOLD, VIOLET]);
+                const floors = tall ? Math.round(R(14, 26)) : Math.round(R(2, 9)), kind = floors <= 3 ? pick([SHOP, NEON, GARAGE]) : pick([HOTEL, HOTEL, GLASS, GARAGE, GOLD, VIOLET]);
                 const b = { ...p, w, dp, floors, kind, tint: pick(TINTS) }, { top } = block(b);
                 if (tall) outline(b, top, pick(NEONS));
                 if (floors <= 3 && Math.random() < 0.5 || tall) { const sn = Math.sin(p.heading), c = Math.cos(p.heading), sw = Math.min(w * 0.7, 20); signBoard(p.x - (dp / 2 + 0.3) * sn, p.z - (dp / 2 + 0.3) * c, p.heading, sw, sw / 4.1, tall ? top + 1 : Math.max(4.5, top - sw / 4.1 - 0.5), signNo++ % SIGNS.length); }

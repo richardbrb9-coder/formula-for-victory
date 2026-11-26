@@ -24,7 +24,7 @@ export const SUZUKA = {
                 [4600, 37.8], [4700, 37.8], [4810, 37.8], [4900, 37], [5020, 34.5], [5220, 29.5], [5300, 27.5], [5440, 21.5], [5540, 18]],
     // where the track crosses itself: the West Straight goes over ('over': the part of the lap on the bridge's deck) and
     // the road from Degner to the Hairpin goes under ('under'; 'clear': the headroom beneath the bridge, in metres)
-    crossover: { over: [4734, 4778], under: [2362, 2398], clear: 5.4 },
+    crossover: { over: [4740, 4778], under: [2362, 2398], clear: 5.4 },
     heliHeight: 30,
     // between the road and the wall: grass 9 m wide with a steel barrier, unless a zone below says otherwise
     runoff: { w: 9, surface: 'grass', barrier: 'steel' },
@@ -57,17 +57,17 @@ export const SUZUKA = {
         { from: 3640, to: 3880, side: 'L', w: 7 },
         // the bridge on the West Straight: concrete walls and fences at the road's edge
         { from: 4690, to: 4822, side: 'B', w: 1.5, surface: 'asphalt', barrier: 'concrete', fence: true, blend: 26 },
-        // 130R: flat out, with a wide asphalt run-off outside
-        { from: 4790, to: 5010, side: 'R', w: 26, surface: 'asphalt', tyres: true, fence: true, blend: 40 },
+        // 130R: flat out, with a wide asphalt run-off outside (it starts where the walls of the bridge end)
+        { from: 4862, to: 5010, side: 'R', w: 26, surface: 'asphalt', tyres: true, fence: true, blend: 26 },
         // the chicane: right then left. An escape road straight ahead, gravel on the way out
         { from: 5110, to: 5262, side: 'L', w: 20, surface: 'asphalt', tyres: true, blend: 40 },
         { from: 5250, to: 5330, side: 'R', w: 11, surface: 'gravel', blend: 20 },
         // the last curve, down onto the main straight
         { from: 5330, to: 5490, side: 'L', w: 13, surface: 'gravel', tyres: true, fence: true, blend: 30 }
     ],
-    // corner names, shown as you reach them
+    // corner names, shown as you reach them (kept at least 140 m apart, so two are never due at once)
     corners: [[470, 'First Curve'], [900, 'S Curves'], [1310, 'Reverse Bank'], [1540, 'Hilltop Curve'], [2110, 'Degner'], [2350, 'Under the Bridge'],
-              [2700, 'Hairpin'], [3000, '200R'], [3600, 'Spoon Curve'], [4050, 'West Straight'], [4720, 'Over the Bridge'], [4790, '130R'], [5190, 'The Chicane'], [5330, 'Final Curve']],
+              [2700, 'Hairpin'], [3000, '200R'], [3600, 'Spoon Curve'], [4050, 'West Straight'], [4630, 'Over the Bridge'], [4800, '130R'], [5190, 'The Chicane'], [5340, 'Final Curve']],
     scenery: suzukaScenery,
     // The far distance (see backdrop.js): green wooded hills all round under a hazy blue sky, with the higher blue hills
     // of the mountains inland to the west.
