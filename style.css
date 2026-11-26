@@ -482,7 +482,7 @@ kbd { display: inline-grid; place-items: center; min-width: 32px; height: 34px; 
     .rr-points { font-size: .95rem; margin: 0 0 2px; }
     /* (the results don't quite fit on a phone on its side: the list scrolls, and the buttons stay in view under it) */
     .rr-box.champ-box .rr-actions { position: sticky; bottom: -12px; margin-top: 4px; padding: 6px 0 8px; background: var(--bg); }
-    .rr-box.champ-box .big-btn, .rr-box.champ-box .act-btn { padding: 9px 16px; font-size: .82rem; }
+    .rr-box.champ-box .big-btn, .rr-box.champ-box .act-btn { padding: 9px 16px; font-size: .82rem; min-height: 44px; }
     .rr-medal { font-size: 1.05rem; margin: 0 0 2px; }
     .season-table td { padding: 5px 6px; }
 }
@@ -574,6 +574,7 @@ kbd { display: inline-grid; place-items: center; min-width: 32px; height: 34px; 
 .quali-box { max-width: 620px; }
 .quali-box .q-how { margin: 8px 0; line-height: 1.5; }
 .quali-box .q-skipnote { margin: 10px 0 0; color: var(--muted); }
+.quali-box .rr-actions .big-btn, .quali-box .rr-actions .act-btn, #race-qskip { min-height: 44px; }   /* (big enough for small fingers on every screen) */
 .quali-table td:nth-child(3), .quali-table td:nth-child(4), .quali-table th:nth-child(3), .quali-table th:nth-child(4) { text-align: right; font-variant-numeric: tabular-nums; }
 .quali-table td:nth-child(4) { color: var(--muted); }
 .quali-table tr:first-child td:nth-child(4) { color: var(--amber); font-weight: 800; }
@@ -733,7 +734,7 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
 @media (max-height: 500px) and (min-width: 641px) {
     #screen-cards.dc-playing .back-btn { display: none; }
     .dc-seat .dc-top { min-height: 40px; } .dc-seat .dc-art { height: 54px; } .dc-seat .dc-helmet { height: 44px; top: 4px; }
-    .dc-score { flex-wrap: nowrap; } .dc-quit { min-height: 36px; } .dc-table { gap: 4px 12px; }
+    .dc-score { flex-wrap: nowrap; } .dc-quit { min-height: 44px; } .dc-table { gap: 4px 12px; }
     .dc-seat .dc-stats { gap: 3px; padding: 5px; }
 }
 @media (max-width: 640px), (max-height: 500px) { .dc-seat .dc-sl em { white-space: nowrap; padding-left: 0; font-size: .58rem; } }
@@ -741,6 +742,8 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
     .dc-seat .dc-top { min-height: 36px; padding-top: 2px; padding-bottom: 2px; } .dc-seat .dc-art { height: 44px; } .dc-seat .dc-helmet { height: 36px; top: 3px; } .dc-seat .dc-stats { padding: 3px; }
     .dc-seat .dc-logo { width: 28px; height: 28px; padding: 2px; } .dc-seat .dc-star { width: 26px; height: 26px; font-size: .9rem; }
     #screen-cards.dc-playing { margin-top: -6px; }
+    /* (the score bar already says whose card is whose and how many are left: the labels make way for a taller picture of the car) */
+    .dc-seat-name { display: none; } .dc-seat .dc-art { height: 60px; } .dc-seat .dc-helmet { height: 50px; top: 5px; }
 }
 /* (cards slide in and out sideways: that must never make the page wider than the screen, or a phone zooms out to fit it) */
 #screen-cards { overflow-x: hidden; overflow-x: clip; margin: 0 -10px; padding: 0 10px; }

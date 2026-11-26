@@ -219,6 +219,8 @@
             <div class="dc-seat cpu"><span class="dc-seat-name">Computer's card <small>${g.cpu.length} left</small></span>
                 <div class="dc-flip"><div class="dc-face back">${cardBack()}</div><div class="dc-face front">${cardHtml(theirs)}</div></div></div>
         </div>`;
+        // (back on this screen while a round's result was showing: show it again, with its Next button, rather than a card that can't be played)
+        if (g.phase === 'shown' && g.last) { g.phase = 'pick'; play(g.last.k); return; }
         if (!myTurn) cpuTurn();
     }
     function renderOver(el) {
