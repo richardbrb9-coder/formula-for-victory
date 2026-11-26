@@ -10,7 +10,8 @@
 // where a script inside an SVG cannot run), drawn onto a small canvas, and kept as a plain PNG. The file itself is
 // then forgotten.
 //
-// The whole set-up can also come from one small table, teams.csv, loaded with the logos (see parseCsv below).
+// The whole set-up can also come from one small table, teams.csv, loaded with the logos (see parseCsv below). It can
+// carry each team's Driver Card numbers too (wins, poles, podiums, titles, debut): whole numbers only, kept on the device.
 //
 //   FFV.logoUrl(id)     an address for a team's logo to show in an <img> (or '' if it has none)
 //   FFV.logoImage(id)   the loaded picture, for painting onto the car (or null)
@@ -64,6 +65,8 @@
     FFV.logoUrl = id => (logos[id] ? logos[id].url : '');
     FFV.logoImage = id => (logos[id] && logos[id].img) || null;
     FFV.hasLogos = () => Object.keys(logos).length > 0;
+    // a short fingerprint of a team's logo (for the Driver Cards' saved pictures: a new logo means a new picture)
+    FFV.logoSig = id => { const d = logos[id] && logos[id].data; if (!d) return ''; let h = 0; for (let i = 0; i < d.length; i += 97) h = (h * 31 + d.charCodeAt(i)) | 0; return d.length + ':' + h; };
     FFV.badge = id => { const t = FFV.teamById(id); if (!t) return ''; return logos[id] ? `<img class="team-logo" src="${logos[id].url}" alt="">` : `<span class="champ-dot" style="background:${t.paint}"></span>`; };
 
     // ---------- reading picture files ----------
@@ -155,9 +158,12 @@
         return { good, notes };
     }
     // ---------- teams.csv: the whole set-up in one little table (made in any spreadsheet, or typed in a notes app) ----------
-    //   team,driver,number,colour1,colour2,colour3,pattern,logo
-    // Only 'team' is needed. Everything in it is treated as plain words and numbers: nothing is ever worked out or run.
-    const HEADS = { team: 'team', driver: 'driver', number: 'number', colour1: 'paint', color1: 'paint', colour2: 'stripe', color2: 'stripe', colour3: 'paint2', color3: 'paint2', pattern: 'pattern', logo: 'logo' };
+    //   team,driver,number,colour1,colour2,colour3,pattern,logo,wins,poles,podiums,titles,debut
+    // Only 'team' is needed. The last five are the numbers on the team's Driver Card: whole numbers only (wins, poles,
+    // podiums and titles 0 to 999; debut, a year, 1950 to 2100). Anything else in those boxes is ignored. Everything in it is treated as plain words and numbers: nothing is ever worked out or run.
+    const HEADS = { team: 'team', driver: 'driver', number: 'number', colour1: 'paint', color1: 'paint', colour2: 'stripe', color2: 'stripe', colour3: 'paint2', color3: 'paint2', pattern: 'pattern', logo: 'logo',
+        wins: 'wins', poles: 'poles', podiums: 'podiums', titles: 'titles', debut: 'debut' };
+    const STATS = Object.keys(FFV.STAT_LIMITS);   // wins, poles, podiums, titles, debut
     function splitCsv(text) {
         const src = String(text).replace(/^\uFEFF/, ''), firstLine = src.split(/\r?\n/, 1)[0], sep = firstLine.includes(',') ? ',' : firstLine.includes(';') ? ';' : firstLine.includes('\t') ? '\t' : ',';
         const rows = []; let row = [], cell = '', quoted = false;
@@ -185,9 +191,11 @@
             const team = words(r.team); if (!team) continue;
             const n = Math.floor(+String(r.number || '').replace(/[^0-9.]/g, ''));
             rows.push({ team, driver: words(r.driver), number: n >= 1 && n <= 99 ? n : 0, paint: hex(r.paint), stripe: hex(r.stripe), paint2: hex(r.paint2),
-                pattern: String(r.pattern || '').trim().toLowerCase().replace(/[\s_]+/g, '-'), logo: baseName(String(r.logo || '')).trim().toLowerCase() });
+                pattern: String(r.pattern || '').trim().toLowerCase().replace(/[\s_]+/g, '-'), logo: baseName(String(r.logo || '')).trim().toLowerCase(),
+                // (card numbers: a whole number within its limits, or nothing. Never text, never a sum.)
+                stats: Object.fromEntries(STATS.map(k => [k, FFV.cleanStat(k, String(r[k] || ''))])) });
         }
-        return { rows, has: Object.fromEntries(['driver', 'number', 'paint', 'stripe', 'paint2', 'pattern', 'logo'].map(k => [k, cols.includes(k)])) };
+        return { rows, has: Object.fromEntries(['driver', 'number', 'paint', 'stripe', 'paint2', 'pattern', 'logo', ...STATS].map(k => [k, cols.includes(k)])) };
     }
     // Put a table of teams onto the eleven cars, in order. A column that isn't in the table changes nothing; an empty
     // or unreadable box goes back to that team's usual one. Returns how many teams it set.
@@ -198,6 +206,7 @@
         use.forEach((r, i) => {
             const t = TEAMS[i], set = { team: r.team };
             for (const k of ['driver', 'number', 'paint', 'stripe', 'paint2', 'pattern']) if (sheet.has[k]) set[k] = r[k];
+            const st = {}; for (const k of STATS) if (sheet.has[k]) st[k] = r.stats[k]; if (Object.keys(st).length) set.stats = st;
             FFV.rename(t.id, set);
             if (sheet.has.logo && r.logo) { const g = byName[r.logo] || byName[r.logo.replace(/\.[a-z0-9]+$/, '')]; if (g) jobs.push(setLogo(t.id, g.data)); }
         });
@@ -208,7 +217,7 @@
     }
     const csvCell = v => { let c = String(v == null ? '' : v); if (/^[=+\-@]/.test(c)) c = "'" + c; return /[",\n\r]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; };
     function exportCsv() {
-        const lines = ['team,driver,number,colour1,colour2,colour3,pattern,logo', ...TEAMS.map(t => [t.team, t.driver, t.number, t.paint, t.stripe, t.paint2, t.pattern || '', ''].map(csvCell).join(','))];
+        const lines = ['team,driver,number,colour1,colour2,colour3,pattern,logo,' + STATS.join(','), ...TEAMS.map(t => [t.team, t.driver, t.number, t.paint, t.stripe, t.paint2, t.pattern || '', '', ...STATS.map(k => t.stats[k])].map(csvCell).join(','))];
         return lines.join('\r\n') + '\r\n';
     }
     function download(name, text) {
@@ -240,8 +249,9 @@
                 <p class="mt-msg" role="status" aria-live="polite"></p>
                 <details class="mt-more"><summary>Set everything up from one file (for grown-ups)</summary>
                     <p class="small">Put a file called <b>teams.csv</b> in with the logos (in the zip, or picked along with them). Make it in any spreadsheet or notes app. The first line names the columns, then one line for each team: the first team is the one you drive for.</p>
-                    <pre class="mt-csv">team,driver,number,colour1,colour2,colour3,pattern,logo</pre>
+                    <pre class="mt-csv">team,driver,number,colour1,colour2,colour3,pattern,logo,wins,poles,podiums,titles,debut</pre>
                     <p class="small">Only <b>team</b> is needed. Colours are like <b>#FF8800</b>. <b>logo</b> is the name of a picture you are loading with it. <b>pattern</b> is one of: <b>${Object.keys(FFV.PATTERNS).join(', ')}</b>.</p>
+                    <p class="small">The last five are for the <b>Driver Cards</b> game, and you can leave them out: <b>wins</b>, <b>poles</b>, <b>podiums</b> and <b>titles</b> are whole numbers from 0 to 999, and <b>debut</b> is the year of the team's first race (1950 to 2100).</p>
                     <button class="act-btn ghost" data-mt="export">⬇️ Export my teams (teams.csv)</button>
                 </details>
             </div>
@@ -331,14 +341,14 @@
             }
             if (act === 'drop') held = null;
             if (act === 'remove') { removeLogo(id); held = null; changed(); }
-            if (act === 'reset') { const o = FFV.original(id); FFV.rename(id, { team: '', driver: '', number: 0, paint: '', stripe: '', paint2: '', pattern: '' }); message = `${o.team} is back to how it started.`; changed(); }
+            if (act === 'reset') { const o = FFV.original(id); FFV.rename(id, { team: '', driver: '', number: 0, paint: '', stripe: '', paint2: '', pattern: '', stats: Object.fromEntries(STATS.map(k => [k, ''])) }); message = `${o.team} is back to how it started.`; changed(); }
             if (act === 'tick' && pending) { const p = pending[+b.dataset.i]; if (p) p.on = !p.on; }
             if (act === 'use' && pending) { const use = pending.filter(p => p.on); endPending(); await assign(use); message = `${Math.min(use.length, SLOTS)} logos loaded. 🎉`; }
             if (act === 'cancel') { endPending(); message = ''; }
             if (act === 'keep') sure = false;
             if (act === 'clear') {
                 if (!sure) sure = true;
-                else { sure = false; held = null; endPending(); for (const t of TEAMS) drop(t.id); dbDo('readwrite', s => s.clear()); FFV.resetNames(); message = 'All cleared. The teams are back to how they started.'; changed(); }
+                else { sure = false; held = null; endPending(); for (const t of TEAMS) drop(t.id); dbDo('readwrite', s => s.clear()); FFV.resetNames(); if (window.FFVCards) window.FFVCards.forget(); message = 'All cleared. The teams are back to how they started.'; changed(); }
             }
             render();
         });
