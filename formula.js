@@ -291,6 +291,7 @@ export function createFormulaCar(design, { merge = false, lite = false, draft = 
     const pipe = add(new THREE.CylinderGeometry(0.045, 0.045, 0.2, lite ? 8 : 16, 1, true), mats.intake); pipe.rotation.z = Math.PI / 2; pipe.position.set(at(5.12), 0.415 + dy, 0);
     // the rain light: a strip of red lamps on the very back of the car (it glows brighter under braking, like tail lights)
     const rain = add(new THREE.BoxGeometry(0.03, 0.1, 0.05), mats.tail); rain.position.set(at(5.26), 0.305 + dy, 0);
+    car.userData.rainLight = rain.position.clone();   // (where the race puts the brake light's glow)
 
     // ---- the halo: a titanium hoop round the cockpit, on one pillar in front of the driver ----
     const hp = [[2.08, 0.87, 0], [2.12, 0.868, 0.12], [2.24, 0.855, 0.24], [2.42, 0.835, 0.295], [2.65, 0.8, 0.305], [2.85, 0.74, 0.3], [2.98, 0.65, 0.29]];

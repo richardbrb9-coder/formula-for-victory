@@ -79,6 +79,14 @@ function makeRacer(design, factor, isPlayer) {
     const racer = { design, model, holder, blob, stats, perf: perf(stats, factor), isPlayer, x: 0, y: 0, z: 0, heading: 0, v: 0, steer: 0, d: 0, idx: 0, lap: 0,
              lapStart: 0, lastLat: 0, finished: null, best: null, half: false, wheelSpin: 0, lineOffset: 0, lat: 0, latV: 0,
              laps: [], lineStart: 0, hitAt: -9 };   // (laps: every lap time; lineStart: when it first crossed the line after the start; hitAt: its last bump)
+    // the red lights on the back (brake light): found once, then lit brighter while the car brakes (see brakeLights)
+    racer.tails = []; model.group.traverse(o => { if (o.isMesh) for (const m of [].concat(o.material)) if (m && m.userData.brakeLight && !racer.tails.includes(m)) racer.tails.push(m); });
+    // and a soft glow round it, so the brake light can be seen from behind (the lamp itself is only a few centimetres)
+    if (model.group.userData.rainLight) {
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: 0xff2010, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
+        glow.geometry.userData.shared = true; glow.position.copy(model.group.userData.rainLight); glow.visible = false; glow.renderOrder = 2;
+        model.group.add(glow); racer.glow = glow;
+    }
     racer.far = farModel(model); holder.add(racer.far);   // (made before the springs go in, while every part is in its resting place)
     racer.shadowCaster = new THREE.Mesh(racer.far.geometry, racer.far.material); racer.shadowCaster.position.copy(racer.far.position); racer.shadowCaster.quaternion.copy(racer.far.quaternion);
     racer.shadowCaster.layers.set(1); racer.shadowCaster.castShadow = true; holder.add(racer.shadowCaster);
@@ -292,7 +300,7 @@ function setupRace() {
     // remove old cars
     leavePodium(); endGridCam(true);
     if (ghost) ghost.model.group.traverse(o => { if (o.isMesh && o.material && o.material.userData.ghostCopy) o.material.dispose(); });   // (the see-through copies)
-    [player, ...rivals, ghost].forEach(r => { if (r) { scene.remove(r.holder); dmg.unfit(r); r.model.dispose(); dropBlob(r.blob); if (r.far) { r.far.geometry.dispose(); r.far.material.dispose(); } if (r.cockpit) { if (r.cockpit.group.parent) r.cockpit.group.parent.remove(r.cockpit.group); r.cockpit.dispose(); } } });
+    [player, ...rivals, ghost].forEach(r => { if (r) { scene.remove(r.holder); dmg.unfit(r); r.model.dispose(); dropBlob(r.blob); if (r.glow) r.glow.material.dispose(); if (r.far) { r.far.geometry.dispose(); r.far.material.dispose(); } if (r.cockpit) { if (r.cockpit.group.parent) r.cockpit.group.parent.remove(r.cockpit.group); r.cockpit.dispose(); } } });
     rivals = []; ghost = null; pixelCache.clear(); mapColours.clear();   // (each race's cars have their own pictures)
     player = makeRacer(teamDesign(playerTeam), 1, true);
     scene.add(player.holder);
@@ -331,7 +339,7 @@ function setupRace() {
     dmg.clearPieces();
     for (const r of [player, ...rivals]) dmg.fit(r);
     try { for (const o of dmg.warmUp(player)) { const was = o.visible; o.visible = true; renderer.compile(o, camera, scene); o.visible = was; } } catch (e) { /* made ready at the first bump instead */ }
-    race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], hits: [] };
+    race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], tapeTimes: [], hits: [] };
     updateCars(0); placeCamera(true);
     startGridCam();
     hud();
@@ -369,7 +377,7 @@ function drivePlayer(dt) {
     // steering: keys/buttons or tilt
     let steerIn = (input.left ? 1 : 0) - (input.right ? 1 : 0);
     if (Math.abs(input.tilt) > 0.05) steerIn = Math.max(-1, Math.min(1, input.tilt));
-    let gas = input.gas, brake = input.brake;
+    let gas = input.gas, brake = input.brake, lamp = 0;
     if (window.__kidbot) {                    // test driver: flat out, steers late with a slow reaction, never brakes
         const tgt = sampleAt(samples[r.idx].d + 10 + r.v * 0.25);
         let want = Math.atan2(-(tgt.p.z - r.z), tgt.p.x - r.x) - r.heading; while (want > Math.PI) want -= Math.PI * 2; while (want < -Math.PI) want += Math.PI * 2;
@@ -392,7 +400,7 @@ function drivePlayer(dt) {
         // driving help 1: ease off before a corner you're going too fast for
         const here = samples[r.idx].d; let target = P.vmax;
         for (let ahead = 0, far = r.v * r.v / (2 * P.brake * 0.6) + 30; ahead <= far; ahead += 8) { const k = Math.abs(sampleAt(here + ahead).ks); const vc = k > 1e-4 ? Math.sqrt(playerGrip * (TRACK.tightWalls ? 0.76 : 0.9) / k) : P.vmax; target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.6 * ahead)); }   // (a little more careful between close walls)
-        if (r.v > target + 1) { gas = false; r.v -= P.brake * 0.75 * dt; }
+        if (r.v > target + 1) { gas = false; r.v -= P.brake * 0.75 * dt; lamp = 2; }   // (the brake light shows amber: the help is braking, not you)
         // driving help 2: a gentle nudge back towards the road near the edge (sooner and firmer where the edge is a wall)
         const edge = s.hw - (TRACK.tightWalls ? 2.1 : 1.5);
         if (Math.abs(lat) > edge) steerIn -= Math.sign(lat) * (TRACK.tightWalls ? 0.7 : 0.45) * Math.min(1, (Math.abs(lat) - edge) / (TRACK.tightWalls ? 2 : 3));
@@ -419,6 +427,8 @@ function drivePlayer(dt) {
     const vTop = r.slip ? vmax * 1.05 : vmax;
     if (go && gas) a += P.a0 * Math.max(0.1, 1 - (r.v / vTop) ** 2) * (r.slip ? 1.15 : 1);
     if (brake) a -= r.v > 0.5 ? P.brake : 3;           // brake, then gently reverse
+    if (brake && r.v > 0.5) lamp = 1;                   // (your own braking shows red, even if the help is braking too)
+    r.brakeLamp = go ? lamp : 0; holdLamp(r);
     a -= 0.25 + r.v * r.v * 0.0004 + (onGrass ? r.v * (gravel ? 0.1 : 0.06) : 0);  // rolling and air drag
     if (!gas && !brake && Math.abs(r.v) < 0.3) r.v = 0;
     r.v = go ? Math.max(-6, r.v + a * dt) : 0;
@@ -494,6 +504,7 @@ function driveRival(r, dt) {
     }
     let a = 0;
     if (go) a = r.v < target ? P.a0 * Math.max(0.1, 1 - (r.v / P.vmax) ** 2) : -P.brake * Math.min(1, (r.v - target) / 3);
+    r.brakeLamp = go && r.v > target + 0.5 ? 1 : 0; holdLamp(r);   // (rivals' brake lights come on as they slow for a corner)
     a -= 0.25;
     r.v = Math.max(0, r.v + a * dt);
     r.d += r.v * dt;
@@ -556,12 +567,31 @@ function chooseDetail() {
     detailOrder = rivals.map(r => { const dx = r.x - camera.position.x, dz = r.z - camera.position.z; return { r, d: Math.sqrt(dx * dx + dz * dz) - (r.fullOn ? 4 : 0) }; }).sort((a, b) => a.d - b.d);
     detailOrder.forEach((e, k) => { e.full = k < MAX_FULL[quality] && e.d < lim; });
 }
+// Brake lights: dim red as normal, bright red while braking, and amber on your car while the driving help brakes for you
+const LAMP = [[0xff1a10, 1.4, 0], [0xff1a10, 7, 0.95], [0xffa020, 6, 0.95]];   // (colour, lamp brightness, glow size in metres)
+let glowTex = null;
+function glowTexture() {
+    if (glowTex) return glowTex;
+    const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 0, 32, 32, 32);
+    g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.18, 'rgba(255,255,255,0.85)'); g.addColorStop(0.5, 'rgba(255,255,255,0.22)'); g.addColorStop(1, 'rgba(255,255,255,0)');
+    x.fillStyle = g; x.fillRect(0, 0, 64, 64); glowTex = new THREE.CanvasTexture(c); glowTex.colorSpace = THREE.SRGBColorSpace; return glowTex;
+}
+// (the replay films ten times a second, so a quick dab of the brake between two samples is kept until the next one:
+// your own braking beats the help's)
+function holdLamp(r) { const h = r.lampHeld || 0, s = r.brakeLamp || 0; r.lampHeld = h === 1 || s === 1 ? 1 : Math.max(h, s); }
+function takeLamp(c) { const h = c.lampHeld || 0; c.lampHeld = c.brakeLamp || 0; return h; }
+function brakeLights(r) {
+    const s = r.brakeLamp || 0; if (s === r.lampShown || !r.tails) return; r.lampShown = s;
+    for (const m of r.tails) { m.emissive.setHex(LAMP[s][0]); m.emissiveIntensity = LAMP[s][1]; }
+    if (r.glow) { r.glow.visible = s > 0; r.glow.material.color.setHex(LAMP[s][0]); r.glow.scale.setScalar(LAMP[s][2] || 1); }
+}
 function updateCars(dt) {
     if (!(race && race.podium)) chooseDetail();
     for (const r of [player, ...rivals]) {
         const sy = samples[r.idx]; r.y = sy.p.y + sy.slope * ((r.x - sy.p.x) * sy.t.x + (r.z - sy.p.z) * sy.t.z);   // the road's height here
         r.holder.position.set(r.x, r.y, r.z);
         r.holder.rotation.y = r.heading;
+        brakeLights(r);
         r.holder.rotation.z = sy.slope ? Math.atan(sy.slope * Math.cos(r.heading - sy.heading)) : 0;   // nose up on a climb, down on a descent
         if (!r.isPlayer && camera) {
             // rivals far up the road aren't drawn, and only those close by are drawn in full detail (with a margin, so a
@@ -838,13 +868,30 @@ function stopReplay() {
     const bar = document.getElementById('race-replay'); if (bar) bar.hidden = true;
     document.getElementById('race-stage').classList.remove('replaying');
 }
-// where the cars were at replay time t (smoothly between the tape's samples)
+// where the cars were at replay time t (smoothly between the tape's samples). Each sample keeps the moment it was taken,
+// and between two samples the car follows a smooth curve that leaves and arrives along its heading at its own speed, so
+// it glides through corners instead of moving in short straight lines that kink ten times a second.
+function tapeAt(t) {
+    const T = race.tapeTimes, rt = T[0] + t; let lo = 0, hi = T.length - 1;
+    if (rt >= T[hi]) return [hi - 1, 1];
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= rt) lo = m; else hi = m; }
+    return [lo, Math.max(0, Math.min(1, (rt - T[lo]) / Math.max(1e-6, T[lo + 1] - T[lo])))];
+}
 function replayPose(t) {
-    const tape = race.tape, f = Math.min(tape.length - 1.001, t / 0.1), i = Math.floor(f), u = f - i, A = tape[i], B = tape[i + 1];
+    const tape = race.tape, [i, u] = tapeAt(t), A = tape[i], B = tape[i + 1], h = race.tapeTimes[i + 1] - race.tapeTimes[i];
+    const u2 = u * u, u3 = u2 * u, h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
     [player, ...rivals].forEach((c, k) => {
         const a = A[k], b = B[k]; if (!a || !b) return;
-        c.x = a[0] + (b[0] - a[0]) * u; c.z = a[1] + (b[1] - a[1]) * u; c.heading = a[2] + wrapAngle(b[2] - a[2]) * u;
+        const jump = (b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2 > 400;   // (a car put back on the road jumps: no curve across that)
+        if (jump) { c.x = a[0] + (b[0] - a[0]) * u; c.z = a[1] + (b[1] - a[1]) * u; }
+        else {
+            const ta = a[4] * h, tb = b[4] * h;
+            c.x = h00 * a[0] + h10 * Math.cos(a[2]) * ta + h01 * b[0] + h11 * Math.cos(b[2]) * tb;
+            c.z = h00 * a[1] - h10 * Math.sin(a[2]) * ta + h01 * b[1] - h11 * Math.sin(b[2]) * tb;
+        }
+        c.heading = a[2] + wrapAngle(b[2] - a[2]) * u;
         c.steer = a[3] + (b[3] - a[3]) * u; c.v = a[4] + (b[4] - a[4]) * u;
+        c.brakeLamp = (u < 0.5 ? a : b)[6] || 0;   // (the brake light, exactly as it was)
         // which part of the lap the car is on (for the road's height under it): the tape says (so a car on a bridge is
         // never mistaken for one on the road beneath it); an old tape without it: near where it was, or anywhere after a jump
         if (a[5] != null) { c.idx = (u < 0.5 ? a : b)[5] % N; return; }
@@ -855,10 +902,10 @@ function replayPose(t) {
 // bring back the bumps that had happened by replay time t (the tape starts a tenth of a second into the race)
 function replayHits(t, pieces) {
     const R = race.replay, all = [player, ...rivals];
-    while (R.hit < race.hits.length && race.hits[R.hit].t - 0.1 <= t) { const ev = race.hits[R.hit++]; if (all[ev.k]) dmg.apply(all[ev.k], ev, pieces); }
+    while (R.hit < race.hits.length && race.hits[R.hit].t <= race.tapeTimes[0] + t) { const ev = race.hits[R.hit++]; if (all[ev.k]) dmg.apply(all[ev.k], ev, pieces); }
 }
 function replayFrame(dt) {
-    const R = race.replay, len = (race.tape.length - 1) * 0.1;
+    const R = race.replay, len = race.tapeTimes[race.tapeTimes.length - 1] - race.tapeTimes[0];
     R.t += dt; if (R.t >= len) { R.t = 0; R.cam = null; R.hit = 0; for (const c of [player, ...rivals]) dmg.reset(c); dmg.clearPieces(); }       // loops round to the start
     replayPose(R.t); replayHits(R.t, true); updateCars(dt);
     // the director: cut to the next shot every few seconds (a trackside shot lasts until the cars have passed)
@@ -1333,7 +1380,7 @@ function frame(now) {
     // the replay tape: every car, ten times a second, from the start until a few seconds after you finish
     if ((race.phase === 'go' || race.phase === 'done') && (race.tapeEnd == null || race.raceTime < race.tapeEnd)) {
         race.tapeT = (race.tapeT || 0) + dt;
-        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v, c.idx])); }
+        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v, c.idx, takeLamp(c)])); race.tapeTimes.push(race.raceTime); }   // (with the exact moment of each sample: frames don't land exactly on the tenths, and playing them back as if they did made the cars judder; the place on the lap, so a car on a bridge stays on it; and the brake light)
     }
     if (mode === 'trial' && race.phase === 'go') {
         race.recT = (race.recT || 0) + dt;
