@@ -198,7 +198,7 @@ export class Damage {
     dent(d, at, dx, dz, radius, depth) {
         const r2 = radius * radius, ax = at.x, ay = at.y, az = at.z;
         for (const m of d.meshes) {
-            if (m === d.shell || m.material === d.inside) continue;         // (the scuff skin shares the painted body's points; the driver and the inside of the car are never bent)
+            if (m === d.shell || m.material === d.inside || (m.material && m.material.userData.driver)) continue;         // (the scuff skin shares the painted body's points; the driver and the inside of the car are never bent)
             const g = m.geometry, pos = g.attributes.position.array, nor = g.attributes.normal ? g.attributes.normal.array : null;
             let keep = m.userData.pristine, touched = false;
             for (let i = 0, n = pos.length; i < n; i += 3) {

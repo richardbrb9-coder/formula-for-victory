@@ -21,7 +21,7 @@
         { k: 'titles', label: 'Championships', short: 'Titles', icon: '🏆' }, { k: 'top', label: 'Top speed', short: 'Speed', icon: '💨', unit: 'km/h' }, { k: 'debut', label: 'Debut year', short: 'Debut', icon: '📅', low: true }   // (short: the name used where there is little room)
     ];
     const SHORT = 10, LONGEST = 50;   // rounds in a short game; the most a full game can last
-    const ART_V = 2;                  // (change this if the pictures are ever drawn differently: every device then draws them afresh)
+    const ART_V = 3;                  // (change this if the pictures are ever drawn differently: every device then draws them afresh)
 
     // ---------- the pack ----------
     const lum = hex => { const n = parseInt(String(hex).slice(1), 16) || 0; return (0.3 * (n >> 16 & 255) + 0.59 * (n >> 8 & 255) + 0.11 * (n & 255)) / 255; };

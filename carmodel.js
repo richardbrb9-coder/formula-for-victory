@@ -1511,6 +1511,8 @@ function interiorKit(car, p, mats, lite) {
     if (!lite) { const it = interiorTexture(p); mats.interior = new THREE.MeshStandardMaterial({ map: it, emissive: 0xffffff, emissiveMap: it, emissiveIntensity: 0.3, roughness: 0.5, metalness: 0.1 }); }
     const col = (g, i) => { const uv = g.attributes.uv; for (let k = 0; k < uv.count; k++) uv.setXY(k, (i + 0.5) / INTERIOR.length, 0.5); return g; };
     const part = (g, i) => { const m = new THREE.Mesh(col(g, i), mats.interior); car.add(m); return m; };
+    // (a part of the driver's helmet: its own glossy material, made the first time a helmet is asked for)
+    part.lid = g => { if (!mats.helmet) mats.helmet = helmetMaterial(p); const m = new THREE.Mesh(g, mats.helmet); car.add(m); return m; };
     return { col, part };
 }
 // short fins under the tail (a diffuser): they hug the rising underside; fs = where across the tail each one goes
@@ -1577,22 +1579,110 @@ function bucketSeat(part, xS, hy, z, w = 0.4, tone = [0, 1, 5], empty = false) {
     const stripe = part(new THREE.BoxGeometry(0.02, 0.26, 0.05), tone[2]); stripe.position.set(xS - 0.125, hy - 0.15, z); stripe.rotation.z = 0.2;
     const rest = part(new THREE.SphereGeometry(0.1, 12, 8), tone[1]); rest.scale.set(0.6, 0.85, 1.15); rest.position.set(xS - 0.2, hy + 0.02, z);
 }
-// the driver: racing suit shoulders and a full-face helmet with a dark visor (never a face)
+// the driver: racing suit shoulders, the head-and-neck collar on them, and a full-face racing helmet (never a face: the
+// visor is always dark and cannot be seen through).
+// The helmet is one glossy material of its own (the shell, the visor, the hinge pods, the little spoiler and the collar are
+// all baked into one piece: one more thing to draw for a car drawn in full, and fewer triangles than the old helmet's
+// separate stripe and ring). Its design is painted on a small picture: the shell in the team's main colour, a broad stripe
+// over the top, front to back, in the second, and a ring round the crown in the third.
+const HELMET_R = 0.125;
+// the helmet's shape, from a point on a ball: longer front to back and deeper at the back, a chin bar pushed forward,
+// and a flat, rolled-in bottom edge
+function helmetShape(x, y, z) {
+    const cut = -0.74, low = Math.max(0, Math.min(1, (-0.08 - y) / 0.45)), chin = x > 0 ? 0.19 * low * low * (3 - 2 * low) * x : 0;
+    let X = x * (x >= 0 ? 1.1 : 1.2) + chin, Z = z * (0.93 - 0.05 * low * (x > 0 ? 1 : 0)), Y = y;
+    if (x < 0) Y -= 0.06 * Math.max(0, -y) * -x;            // the back of the shell reaches a little further down the neck
+    if (y < cut) { const k = Math.max(0.55, 1 - (cut - y) * 1.6); Y = cut - (cut - y) * 0.12; X *= k; Z *= k; }
+    return [X * HELMET_R, Y * HELMET_R, Z * HELMET_R];
+}
+// the visor opening, at u from -1 (its left end) to 1 (its right end): [the angle down from the top of the helmet to its
+// top edge and to its bottom edge, the angle round from the front]
+const VISOR_HALF = Math.PI * 0.56;
+function visorEdge(u) { const k = Math.abs(u) ** 2.4; return [Math.PI * (0.335 + 0.05 * k), Math.PI * (0.565 - 0.075 * k), u * VISOR_HALF]; }
+// where each part of the helmet takes its colour from on the helmet's picture: [left, top, width, height] in pixels of 256 x 128
+const HELMET_CELL = { shell: [2, 0, 188, 128], visor: [196, 2, 56, 60], carbon: [200, 70, 48, 20], dark: [200, 102, 48, 20] };
+function helmetTextures(d) {
+    const own = Array.isArray(d.helmet) && d.helmet.length === 3 && d.helmet.every(c => /^#[0-9a-f]{6}$/i.test(c)) ? d.helmet : null;
+    const n = parseInt(String(d.caliper || '').slice(1), 16) || 0, lum = (0.3 * (n >> 16 & 255) + 0.59 * (n >> 8 & 255) + 0.11 * (n & 255)) / 255;
+    let shell = lum < 0.3 ? '#f4f6f8' : d.caliper, stripe = lum < 0.3 || lum > 0.85 ? '#e10600' : '#f4f6f8', ring = stripe;   // (a car with no team: as the old helmet was)
+    if (own) [shell, stripe, ring] = own;
+    const make = () => { const c = document.createElement('canvas'); c.width = 256; c.height = 128; return c; };
+    const pic = make(), x = pic.getContext('2d'), mark = make(), m = mark.getContext('2d');
+    // ---- the shell, laid out like a map of the world: across = round the helmet (the front in the middle), down = top to bottom ----
+    x.fillStyle = shell; x.fillRect(0, 0, 192, 128);
+    const row = (colour, t0, t1) => { x.fillStyle = colour; x.fillRect(0, t0 * 128, 192, (t1 - t0) * 128); };
+    row(ring, 0.205, 0.275);                                                 // the ring round the crown, above the visor
+    x.fillStyle = 'rgba(0,0,0,0.35)'; x.fillRect(0, 0.2 * 128, 192, 1); x.fillRect(0, 0.275 * 128, 192, 1);
+    for (let yy = 0; yy < 128; yy++) {                                       // the broad stripe over the top, front to back
+        const th = (yy + 0.5) / 128 * Math.PI, half = Math.asin(Math.min(1, 0.3 / Math.max(0.001, Math.sin(th)))) / (Math.PI * 2) * 188;
+        if (th > Math.PI * 0.86) break;
+        x.fillStyle = stripe; x.fillRect(96 - half, yy, half * 2, 1); x.fillRect(0, yy, half + 2, 1); x.fillRect(190 - half, yy, half + 2, 1);
+    }
+    row('#101114', 0.9, 1);                                                  // the rubber trim round the bottom edge
+    x.fillStyle = '#0b0c0e';                                                 // and a dark seal round the visor opening (the visor itself covers the middle of it)
+    for (let px = 0; px < 192; px++) { const u = ((px + 0.5 - 2) / 188 - 0.5) * 2 * Math.PI / VISOR_HALF; if (Math.abs(u) > 1.04) continue; const [t0, t1] = visorEdge(Math.max(-1, Math.min(1, u))); x.fillRect(px, (t0 / Math.PI - 0.016) * 128, 1, ((t1 - t0) / Math.PI + 0.032) * 128); }
+    // ---- the visor: dark, with a hint of a mirrored tint across the middle ----
+    const [vx, vy, vw, vh] = HELMET_CELL.visor, g = x.createLinearGradient(0, vy - 2, 0, vy + vh + 2);
+    [[0, '#04060a'], [0.3, '#0c1230'], [0.5, '#1c2460'], [0.64, '#2a1c58'], [0.8, '#0b1020'], [1, '#040508']].forEach(([t, c]) => g.addColorStop(t, c));
+    x.fillStyle = g; x.fillRect(192, 0, 64, 64);
+    x.fillStyle = '#17191d'; x.fillRect(192, 64, 64, 32); x.fillStyle = '#0a0b0d'; x.fillRect(192, 96, 64, 32);
+    // ---- its twin: how smooth (green) and how like a mirror (blue) each part is ----
+    m.fillStyle = 'rgb(255,48,40)'; m.fillRect(0, 0, 192, 128);             // glossy paint
+    m.fillStyle = 'rgb(255,150,20)'; m.fillRect(0, 0.9 * 128, 192, 0.1 * 128);
+    m.fillStyle = 'rgb(255,20,100)'; m.fillRect(192, 0, 64, 64);             // the visor: smoother still, with only a little of a mirror in it, so it always stays dark
+    m.fillStyle = 'rgb(255,165,30)'; m.fillRect(192, 64, 64, 32); m.fillStyle = 'rgb(255,170,20)'; m.fillRect(192, 96, 64, 32);
+    const t = new THREE.CanvasTexture(pic); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+    const k = new THREE.CanvasTexture(mark); k.colorSpace = THREE.NoColorSpace;
+    return [t, k];
+}
+function helmetMaterial(d) {
+    const [map, mark] = helmetTextures(d);
+    const mat = new THREE.MeshStandardMaterial({ map, roughnessMap: mark, metalnessMap: mark, roughness: 1, metalness: 0.6 });   // (the picture's green and blue scale these two)
+    mat.userData.cabinPart = true;   // (hidden with the rest of the driver in the driver's-seat view)
+    mat.userData.driver = true;      // (never bent by a crash)
+    return mat;
+}
+// put a shape's picture co-ordinates inside one cell of the helmet's picture (keep: use the shape's own, squeezed into the cell)
+function helmetUV(g, cell, keep = false) {
+    const [cx, cy, cw, ch] = HELMET_CELL[cell], uv = g.attributes.uv;
+    for (let k = 0; k < uv.count; k++) keep ? uv.setXY(k, (cx + uv.getX(k) * cw) / 256, 1 - (cy + (1 - uv.getY(k)) * ch) / 128) : uv.setXY(k, (cx + cw / 2) / 256, 1 - (cy + ch / 2) / 128);
+    return g;
+}
 function helmetedDriver(part, xS, hy, z) {
-    const R = 0.125;
+    const R = HELMET_R, lid = part.lid;
     const body = part(new THREE.SphereGeometry(1, 14, 10), 4); body.scale.set(0.15, 0.16, 0.25); body.position.set(xS - 0.04, hy - 0.2, z);
-    const lid = part(new THREE.SphereGeometry(R, 20, 14), 3); lid.scale.set(1.12, 1, 0.94); lid.position.set(xS, hy, z);
-    const visor = part(new THREE.SphereGeometry(R * 1.04, 20, 8, Math.PI * 0.48, Math.PI * 1.04, Math.PI * 0.3, Math.PI * 0.27), 2); visor.scale.set(1.12, 1, 0.94); visor.position.set(xS, hy, z);   // a wide black visor band
-    const band = part(new THREE.TorusGeometry(R * 0.985, 0.02, 6, 24, Math.PI), 8); band.scale.set(1.12, 1, 1.6); band.position.set(xS, hy, z);   // a broad stripe over the top of the helmet, front to back
-    // a ring round the crown, above the visor, in the helmet's third colour (it lies under the stripe where they cross)
-    const ring = part(new THREE.TorusGeometry(R * 0.775, 0.017, 5, 20), 16); ring.rotation.x = Math.PI / 2; ring.scale.set(1.12, 0.94, 1.5); ring.position.set(xS, hy + R * 0.62, z);
+    const at = m => { m.position.x += xS; m.position.y += hy; m.position.z += z; return m; };
+    // the shell: a ball pulled into shape (see helmetShape), with its design painted on
+    const sg = new THREE.SphereGeometry(1, 22, 14), sp = sg.attributes.position;
+    for (let k = 0; k < sp.count; k++) sp.setXYZ(k, ...helmetShape(sp.getX(k), sp.getY(k), sp.getZ(k)));
+    sg.computeVertexNormals(); at(lid(helmetUV(sg, 'shell', true)));
+    // the visor: a wide opening right round the front, tallest in the middle and narrowing to the hinge on each side,
+    // sitting just proud of the shell
+    { const COLS = 18, ROWS = 5, pos = [], uv = [], idx = [];
+      for (let i = 0; i <= COLS; i++) { const [t0, t1, a] = visorEdge(i / COLS * 2 - 1);
+          for (let j = 0; j <= ROWS; j++) { const th = t0 + (t1 - t0) * j / ROWS, r = 1.035; pos.push(...helmetShape(Math.cos(a) * Math.sin(th) * r, Math.cos(th) * r, Math.sin(a) * Math.sin(th) * r)); uv.push(i / COLS, 1 - j / ROWS); } }
+      for (let i = 0; i < COLS; i++) for (let j = 0; j < ROWS; j++) { const k = i * (ROWS + 1) + j, n = k + ROWS + 1; idx.push(k, n, k + 1, k + 1, n, n + 1); }
+      const vg = new THREE.BufferGeometry(); vg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); vg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); vg.setIndex(idx); vg.computeVertexNormals();
+      at(lid(helmetUV(vg, 'visor', true))); }
+    // a hinge pod on each side, where the visor pivots
+    for (const sd of [1, -1]) {
+        const a = Math.PI * 0.57, th = Math.PI * 0.46, [px, py, pz] = helmetShape(Math.cos(a) * Math.sin(th), Math.cos(th), sd * Math.sin(a) * Math.sin(th));
+        const pod = lid(helmetUV(new THREE.CylinderGeometry(0.017, 0.022, 0.014, 10), 'carbon')); pod.rotation.x = sd * Math.PI / 2; pod.position.set(px + 0.004, py, pz + sd * 0.006); at(pod);
+    }
+    // a little spoiler across the back of the crown, an air intake on the forehead, and a vent in the chin bar
+    { const [px, py] = helmetShape(-Math.sin(0.92), Math.cos(0.92), 0), sp2 = lid(helmetUV(new THREE.BoxGeometry(0.03, 0.004, 0.104), 'carbon')); sp2.position.set(px - 0.004, py + 0.002, 0); sp2.rotation.z = 0.62; at(sp2); }
+    { const [px, py] = helmetShape(Math.sin(0.78), Math.cos(0.78), 0), sc = lid(helmetUV(new THREE.BoxGeometry(0.02, 0.005, 0.032), 'dark')); sc.position.set(px, py + 0.001, 0); sc.rotation.z = -0.78; at(sc); }
+    { const [px, py] = helmetShape(Math.sin(2.02), Math.cos(2.02), 0), cv = lid(helmetUV(new THREE.BoxGeometry(0.005, 0.008, 0.042), 'dark')); cv.position.set(px, py, 0); cv.rotation.z = 0.3; at(cv); }
+    // the head-and-neck support: a carbon yoke over the shoulders, rising to a collar behind the helmet
+    { const yoke = lid(helmetUV(new THREE.TorusGeometry(0.098, 0.019, 5, 12, Math.PI * 1.16).rotateZ(Math.PI * 0.42).rotateX(Math.PI / 2), 'carbon')); yoke.scale.set(1, 0.8, 1.3); yoke.position.set(-0.012, -0.118, 0); at(yoke);
+      const collar = lid(helmetUV(new THREE.BoxGeometry(0.03, 0.085, 0.13), 'carbon')); collar.position.set(-0.142, -0.074, 0); collar.rotation.z = -0.14; at(collar); }
 }
 // A helmet on its own (with the top of the driver's shoulders), for the Driver Cards' pictures: the very same helmet the
 // car's driver wears, in the same colours. Returns { group, dispose }.
 export function helmetModel(design) {
     const group = new THREE.Group(), mats = {}, { part } = interiorKit(group, design, mats, false);
     helmetedDriver(part, 0, 0, 0);
-    return { group, dispose() { group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); mats.interior.map.dispose(); mats.interior.dispose(); } };
+    return { group, dispose() { group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); for (const m of [mats.interior, mats.helmet]) { if (!m) continue; m.map.dispose(); if (m.roughnessMap) m.roughnessMap.dispose(); m.dispose(); } } };
 }
 // The extra detail on the 90s supercar: the famous seating (the driver in the middle, a passenger seat set back on each side),
 // mirrors on stalks, a roof intake you can see into, a meshed nose intake, indicators, wiper and badge.

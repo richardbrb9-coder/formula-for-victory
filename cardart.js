@@ -61,7 +61,7 @@ export async function drawCards(list, each, stillWanted = () => true) {
             scene.remove(model.group); model.dispose();
             // ---- the helmet: close up, from the front and a little to one side, so the visor, stripe and ring all show ----
             const helmet = helmetModel(design); scene.add(helmet.group); shadow.visible = false;
-            renderer.setSize(HELMET[0], HELMET[1], false); cam.fov = 22; cam.aspect = 1; cam.position.set(0.8, 0.3, 0.66); cam.lookAt(0, -0.02, 0); cam.updateProjectionMatrix();
+            renderer.setSize(HELMET[0], HELMET[1], false); cam.fov = 22; cam.aspect = 1; cam.position.set(0.95, 0.27, 0.46); cam.lookAt(0, -0.025, 0); cam.updateProjectionMatrix();
             renderer.render(scene, cam); out.helmet = canvas.toDataURL(type, 0.9);
             scene.remove(helmet.group); helmet.dispose();
             made++; each(card.id, out);

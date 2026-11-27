@@ -77,12 +77,27 @@ always at night).
   your row is lit. Headlines still talk to you ("You win!").
 - **Helmets.** Every driver's helmet is in the team's three colours: the shell in `paint`, a broad stripe over the top
   in `stripe`, a ring round the crown in `paint2`, and always a dark visor (`helmetedDriver` in `carmodel.js`; the
-  colours come from `helmet` in `teamdesign.js`). The colours are three more squares in the small strip of colours
-  the cockpit parts already share, so a helmet adds nothing extra to draw. A family's own colours are used the same way.
+  colours come from `helmet` in `teamdesign.js`). A family's own colours are used the same way. See "The helmets" below.
 - Each team also has made-up card numbers (`top`, and `stats`: wins, poles, podiums, titles, debut) for Driver Cards,
   and `LEGENDS` lists five more made-up cards that only exist in that game.
 - There are eleven teams, so eleven cars on the grid. Add a team to the table and the grid, the results, the points
   tables and the championship all follow (points still go to the top ten only).
+
+## The helmets (`helmetedDriver` in `carmodel.js`)
+
+- A proper racing helmet: a rounded shell that is longer front to back and deeper at the back, with a chin bar; a wide
+  visor opening, tallest in the middle and narrowing to a hinge pod on each side; a small air intake on the forehead,
+  a vent in the chin bar and a little spoiler across the back; and the head-and-neck collar on the shoulders.
+- **Never a face.** The visor is solid: dark, with a blue and violet tint across the middle, glossy, and only a
+  little of a mirror in it, so it stays dark even under a bright sky.
+- The design (shell, stripe, ring, the dark seal round the visor) is painted on one small picture, laid out like a map
+  of the world (`helmetTextures`). A twin picture says how smooth and how mirror-like each part is.
+- Cost: the whole helmet and collar is ONE glossy material, baked into one piece: one more thing to draw for a car
+  that is drawn in full (your own and the nearest few), and about 1,000 triangles, fewer than the old helmet, whose
+  stripe and ring were separate shapes. Far-off cars are still one simple shape each.
+- It is hidden with the rest of the driver in the driver's-seat view (`cabinPart`) and is never bent by a crash.
+- The Driver Cards' pictures are drawn from the same helmet (`helmetModel`), a little more from the front than before.
+  `ART_V` in `cards.js` went up, so every device draws its cards afresh once.
 
 ## The paint's deep gloss (`paintMaterial` and `setPaintGloss` in `carmodel.js`)
 
