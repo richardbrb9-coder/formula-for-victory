@@ -772,12 +772,14 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
     color: #fff; font-family: var(--display); font-weight: 900; font-size: 1.5rem; line-height: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
     text-shadow: 0 1px 4px rgba(0,0,0,.6); box-shadow: 0 0 16px rgba(0,229,255,.55); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
 .boost-on .boost-btn { display: flex; }
+@media (min-width: 641px) and (min-height: 501px) { .boost-on .race-map { bottom: 250px; } }   /* (on a tablet the button would sit on the little map: in a race the map moves up out of its way) */
 .boost-btn b { font-size: 1.25rem; margin-left: 2px; display: inline; } .boost-btn small { display: block; font-size: .58rem; letter-spacing: .14em; }
 .boost-btn:active { transform: scale(.94); }
 .boost-btn.firing { background: radial-gradient(circle at 50% 38%, #fff, #ffd75e 55%, #ff8a00); border-color: #fff; color: #15171b; text-shadow: none; box-shadow: 0 0 26px rgba(255,215,94,.9); animation: boost-fire .35s ease-in-out infinite alternate; }
 .boost-btn.empty { background: rgba(17,19,23,.6); border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.55); box-shadow: none; }
 @keyframes boost-fire { to { transform: scale(1.07); } }
-@media (max-width: 640px) { .boost-btn { width: 68px; height: 68px; left: 3px; bottom: calc(88px + 10px); font-size: 1.15rem; } .boost-btn b { font-size: 1rem; } .boost-btn small { font-size: .5rem; } }
+@media (max-width: 640px) { .boost-btn { width: 68px; height: 68px; left: 3px; bottom: calc(88px + 10px); font-size: 1.15rem; } .boost-btn b { font-size: 1rem; } .boost-btn small { font-size: .5rem; }
+    .boost-on .hud-speed, .boost-on .race-slip { left: 38%; } }   /* (an upright phone: the speed moves a little left, out from under the button) */
 @media (max-height: 500px) { .boost-btn { width: 66px; height: 66px; left: 3px; bottom: calc(84px + 8px); font-size: 1.1rem; } .boost-btn b { font-size: 1rem; } .boost-btn small { font-size: .48rem; } }
 /* "PIT": the hint as you come up to the box */
 .race-pit-hint { position: absolute; left: 50%; top: 31%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 18px 9px; pointer-events: none; text-align: center;
@@ -790,7 +792,8 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
 .podium-on .race-pit-hint, .replaying .race-pit-hint, .pitting .race-pit-hint { display: none; }
 @media (max-height: 500px) { .race-pit-hint { top: 43%; padding: 3px 12px 4px; border-width: 2px; } .race-pit-hint b { font-size: 1.25rem; } .race-pit-hint span { font-size: .78rem; } }   /* (a phone on its side: under the little tower of names) */
 /* the pit stop: your car from above, with a big round button at each wheel */
-.pit-panel { position: absolute; inset: 0; display: grid; place-items: center; padding: 10px; background: rgba(5,6,8,.34); touch-action: none; }
+.pit-panel { position: absolute; inset: 0; display: grid; place-items: center; padding: 10px; background: rgba(5,6,8,.34); touch-action: none; pointer-events: none; }
+.pit-box { pointer-events: auto; }   /* (only the panel itself takes taps: the Pause button and the rest of the top bar still work during a stop) */
 .pit-panel[hidden] { display: none; }
 .pit-box { display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(430px, 100%); max-height: 100%; padding: 14px 18px 16px; text-align: center; background: linear-gradient(180deg, rgba(27,31,38,.94), rgba(17,19,23,.94)); border: 3px solid #FFC400; border-radius: 18px; box-shadow: 0 14px 40px rgba(0,0,0,.6); }
 .pit-box .kicker { margin: 0; color: #FFC400; }
@@ -835,6 +838,10 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
 .trophy-toast .trophy-art { width: 58px; height: 58px; flex: none; }
 .tt-text { display: flex; flex-direction: column; min-width: 0; text-align: left; } .tt-text small { font-family: var(--display); font-weight: 700; font-size: .64rem; letter-spacing: .22em; text-transform: uppercase; color: #ffd75e; }
 .tt-text b { font-family: var(--head); font-weight: 400; font-size: 1.2rem; line-height: 1.15; } .tt-text span { font-size: .82rem; color: var(--muted); line-height: 1.25; }
+/* (on the racing screen it is smaller and sits right at the top, so it stays above the top line of the results and
+   qualifying panels: on a tablet on its side those begin about 68 px down. How to win it is on the Trophies screen.) */
+.racing .trophy-toast { top: max(4px, env(safe-area-inset-top)); gap: 8px; padding: 4px 16px 4px 6px; border-radius: 12px; }
+.racing .trophy-toast .trophy-art { width: 44px; height: 44px; } .racing .tt-text b { font-size: 1.05rem; } .racing .tt-text span { display: none; }
 /* the trophy cabinet */
 .trophy-count { margin: 0 0 14px; font-family: var(--head); font-size: 1.05rem; color: var(--muted); } .trophy-count b { font-family: var(--display); font-weight: 900; font-size: 1.6rem; color: #ffd75e; margin-right: 2px; }
 .trophy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
@@ -856,6 +863,7 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
 .rec-note { margin-top: 14px; max-width: 760px; line-height: 1.5; }
 .circuit-card .cc-best { display: flex; flex-direction: column; gap: 1px; font-size: .84rem; color: var(--amber); font-weight: 700; } .circuit-card .cc-best b { font-family: var(--display); font-weight: 900; font-size: .95rem; color: #fff; }
 .circuit-card .cc-best small { font-weight: 400; font-size: .76rem; color: var(--muted); }
-.setup-facts .link-btn.inline { min-height: 0; }
+/* (the records links sit in a line of text, but a finger still gets 44 px to hit: the extra is padding, taken back by the margin) */
+.setup-facts .link-btn.inline, .screen-head .link-btn.inline { min-height: 0; padding: 11px 6px; margin: -11px -6px; }
 @media (max-width: 640px) { .trophy-grid { grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 8px; } .trophy-card .trophy-art { width: 72px; height: 72px; } .rec-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .boost-btn.firing, .pit-wheel i, .race-pit-hint.slow { animation: none; } }
