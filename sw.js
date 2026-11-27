@@ -1,4 +1,4 @@
-const CACHE_NAME = 'formula-for-victory-v16'; // Bump this on every change so tablets pick up the new version
+const CACHE_NAME = 'formula-for-victory-v17'; // Bump this on every change so tablets pick up the new version
 const CACHE_PREFIX = 'formula-for-victory-'; // Only this app's own caches are ever deleted: every app on richardbrb9-coder.github.io shares the same cache storage
 
 // Everything is stored inside the app (no CDNs), and all addresses are relative so it works in a GitHub Pages subfolder.
@@ -56,6 +56,8 @@ const CORE_FILES = [
     './lib/three-LICENSE.txt',
     './icon-192.png',
     './icon-512.png',
+    './icon-maskable-512.png',
+    './apple-touch-icon.png',
     './fonts/orbitron-latin-700-normal.woff2',
     './fonts/orbitron-latin-900-normal.woff2',
     './fonts/russo-one-latin-400-normal.woff2',

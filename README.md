@@ -4,6 +4,22 @@ A Grand Prix racing game for ages 9 to 12: single-seater racing cars on real cir
 Supercar Legends. Plain JavaScript and three.js, installable (a PWA), and it works with no internet: nothing is loaded
 from other websites.
 
+## ▶️ Play it
+
+**[Open Formula for Victory in your browser](https://richardbrb9-coder.github.io/formula-for-victory/)**
+
+It plays straight away in Chrome, Safari or Edge. To keep it on the home screen like an app (it then opens full screen and
+works with no internet):
+
+- **Android tablet or phone (Chrome):** open the link, tap **📲 Install** at the top of the game (or Chrome's ⋮ menu →
+  **Add to Home screen** → **Install**).
+- **iPhone or iPad (Safari):** open the link, tap the **Share** button ⬆️ → **Add to Home Screen** → **Add**. (Tapping
+  **📲 Install** in the game shows the same hint.)
+- **Laptop (Chrome or Edge):** click **📲 Install** at the top of the game, or the install icon at the right of the
+  address bar.
+
+Once it's installed, open the game while online now and then to pick up new versions.
+
 **Stage 5 (this version):** every driver is shown by name (yours with a small YOU tag), every helmet is painted in
 its team's colours, a race can begin with optional qualifying, and there is a new card game, Driver Cards.
 **Phase 4:** a championship season across all five circuits, a main menu with Championship, Quick

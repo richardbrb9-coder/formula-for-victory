@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <!-- Formula for Victory: draws the app icon in code (a single-seater's silhouette and a chequered flag; no brand marks).
-     Open this page and call icon(192) or icon(512): it returns the PNG as base64. The saved copies are icon-192.png and icon-512.png. -->
+     Open this page and call icon(192) or icon(512): it returns the PNG as base64. The saved copies are icon-192.png and icon-512.png;
+     icon(512, true) is icon-maskable-512.png (for round Android icons) and icon(180) is apple-touch-icon.png (iPhone). -->
 <meta charset="utf-8"><body style="background:#333"><canvas id="c"></canvas>
 <script>
 function carShape(x, w) {
@@ -12,12 +13,13 @@ function carShape(x, w) {
     x.fillRect(88 * u, -5.5 * u, 13 * u, 2.2 * u);
     x.save(); x.lineWidth = 1.8 * u; x.strokeStyle = x.fillStyle; x.beginPath(); x.moveTo(40 * u, -24 * u); x.quadraticCurveTo(50 * u, -27 * u, 56 * u, -17 * u); x.stroke(); x.restore();
 }
-function icon(S) {
+function icon(S, maskable) {   // maskable: everything shrunk into the middle, so a round Android icon doesn't cut the car off
     const c = document.getElementById('c'); c.width = c.height = S; const x = c.getContext('2d'), u = S / 512;
     // background: dark, with a red glow low down (full square, so launchers can round the corners themselves)
     x.fillStyle = '#111317'; x.fillRect(0, 0, S, S);
     const g = x.createRadialGradient(S * 0.5, S * 0.78, S * 0.05, S * 0.5, S * 0.78, S * 0.75); g.addColorStop(0, '#E10600'); g.addColorStop(0.55, '#5a0a08'); g.addColorStop(1, '#111317');
     x.fillStyle = g; x.fillRect(0, 0, S, S);
+    if (maskable) { const k = 0.74; x.translate(S / 2, S * 0.53); x.scale(k, k); x.translate(-S / 2, -S / 2); }
     // the chequered flag, waving, top left
     x.save(); x.translate(150 * u, 60 * u); x.rotate(-0.1);
     const cols = 7, rows = 5, q = 36 * u;
