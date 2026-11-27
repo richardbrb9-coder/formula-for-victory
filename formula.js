@@ -382,9 +382,10 @@ function onStrip(x, d, W, H, Y, m, y, side, fn) {
 export function formulaTwoTone(x, d, W, H, Y) { x.fillStyle = d.paint2; x.fillRect(0, Y(0.3), W, Y(0.14) - Y(0.3)); x.fillRect(0, Y(0.86), W, Y(0.7) - Y(0.86)); }
 // Motorsport team schemes on the Formula racer: stripes and blocks of colour, and made-up sponsors on the airbox,
 // the rear wing end plates and the top of the tub (kit: the sponsor list and sticker drawing from carmodel.js)
-export function formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS }) {
+export function formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS, decals }) {
     const sc = d.stripeColour, p2 = d.paint2, S = i => SPONSORS[i % SPONSORS.length], U = m => (m / 5.5) * W;
-    const sticker = (sp, wM, hM) => px => sponsorSticker(x, sp, wM * px, hM * px);
+    const xd = decals || x;   // (stickers and logos are drawn through this, so the paint's gloss knows they are not paint: see liveryTexture)
+    const sticker = (sp, wM, hM) => px => sponsorSticker(xd, sp, wM * px, hM * px);
     const both = fn => { for (const side of ['right', 'left']) fn(side); };
     // a sweep of colour along the bottom of the engine cover, on both sides
     const sweep = colour => both(side => { const r = side === 'right', v = y => Y(stripV(y, r)); x.fillStyle = colour; x.beginPath(); x.moveTo(U(2.7), v(0.3)); x.lineTo(U(2.7), v(0.74)); x.quadraticCurveTo(U(3.8), v(0.6), U(4.8), v(0.5)); x.lineTo(U(4.8), v(0.3)); x.fill(); });
@@ -408,9 +409,9 @@ export function formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS }) {
     // picture as the rest of the livery (so it costs nothing while racing), on both sides of the engine cover and on the nose
     // in place of the made-up sponsors there. d.logo is a picture that has already been loaded.
     const logo = d.logo && (d.logo.naturalWidth || d.logo.width) ? d.logo : null;
-    const own = (wM, hM) => px => { const iw = logo.naturalWidth || logo.width, ih = logo.naturalHeight || logo.height, k = Math.min(wM * px / iw, hM * px / ih); x.drawImage(logo, -iw * k / 2, -ih * k / 2, iw * k, ih * k); };
-    both(side => { onStrip(x, d, W, H, Y, 3.12, 0.8, side, logo ? own(0.56, 0.2) : sticker(S(kit[0]), 0.5, 0.12)); onStrip(x, d, W, H, Y, 5.27, 0.55, side, sticker(S(kit[1]), 0.4, 0.1)); });
-    onTop(x, d, W, H, Y, 1.5, logo ? own(0.3, 0.2) : sticker(S(kit[2]), 0.3, 0.075));
+    const own = (wM, hM) => px => { const iw = logo.naturalWidth || logo.width, ih = logo.naturalHeight || logo.height, k = Math.min(wM * px / iw, hM * px / ih); xd.drawImage(logo, -iw * k / 2, -ih * k / 2, iw * k, ih * k); };
+    both(side => { onStrip(xd, d, W, H, Y, 3.12, 0.8, side, logo ? own(0.56, 0.2) : sticker(S(kit[0]), 0.5, 0.12)); onStrip(xd, d, W, H, Y, 5.27, 0.55, side, sticker(S(kit[1]), 0.4, 0.1)); });
+    onTop(xd, d, W, H, Y, 1.5, logo ? own(0.3, 0.2) : sticker(S(kit[2]), 0.3, 0.075));
 }
 // the race number (on the nose and on both sides of the fin) and the driver's tag (on the rear wing end plates)
 export function formulaMarks(x, d, W, H, Y, num, tag) {

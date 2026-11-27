@@ -84,6 +84,24 @@ always at night).
 - There are eleven teams, so eleven cars on the grid. Add a team to the table and the grid, the results, the points
   tables and the championship all follow (points still go to the top ten only).
 
+## The paint's deep gloss (`paintMaterial` and `setPaintGloss` in `carmodel.js`)
+
+- The cars have the deep, wet-look gloss of the 60s GT in Supercar Legends: smoother paint (`gtRough`) under a
+  mirror-smooth clear coat, and the bright line along the flanks with rich colour under it (`horizonShine`: what the
+  paint reflects from below the horizon is dimmed, and a slim band just above it is brightened). The reflections
+  themselves are the same live ones as before (`reflections.js`).
+- **Only the paint is glossy.** Tyres, carbon parts, the floor and the halo are other materials and are untouched.
+  Stickers, race numbers, a family's own logo and the panel gaps are part of the livery picture, so they are drawn a
+  second time, as plain shapes, on a small marker picture (`glossMarker`, `onBoth` in `carmodel.js`; `decals` in
+  `formulaTeam`): the marker tells the paint where it is satin vinyl instead. A loaded logo is stamped on the marker
+  as its own shape, so a logo with see-through corners keeps glossy paint round it.
+- **What it costs.** The clear coat is a second layer of shine worked out for every painted pixel.
+  - High graphics: the full effect on all eleven cars.
+  - Medium and Low: the full effect on your own car only. The rivals keep the smoother paint, the satin stickers and
+    the bright line, but not the clear coat's own layer (`setPaintGloss(model, false)`). Before this stage every car
+    had a (duller) clear coat at every level, so on a tablet the rivals' paint now costs a little less than it did.
+  - `applyQuality` in `race.js` sets it again when the graphics level changes.
+
 ## My teams (`myteams.js`): a family's own names and logos, on their own device only
 
 - Settings → My teams lets a family rename the eleven teams and drivers, change car numbers and colours, and load a

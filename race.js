@@ -13,7 +13,7 @@ import { RaceSound } from './soundfx.js';
 import { Weather, WEATHERS, weatherLook } from './weather.js';
 import * as BD from './backdrop.js';
 import { Post } from './post.js';
-import { createCar, carStats } from './carmodel.js';
+import { createCar, carStats, setPaintGloss } from './carmodel.js';
 import { teamDesign } from './teamdesign.js';
 import { pitLayout, buildPitMarks, PitPanel, BAY_GAP } from './pitstop.js';
 import { buildFlag, winFlag } from './flag.js';
@@ -71,8 +71,13 @@ function blobShadow() {
 }
 // throw away a car's contact shadow (each car has its own little picture for it)
 function dropBlob(m) { m.geometry.dispose(); m.material.map.dispose(); m.material.dispose(); }
+// The paint's deep gloss (a clear coat over the colour: see setPaintGloss in carmodel.js). High graphics: every car.
+// Medium and Low: your own car only; the rivals keep the cheaper version, which costs a tablet less than their paint
+// did before the gloss was added.
+const fullGloss = isPlayer => isPlayer || quality === 'high';
 function makeRacer(design, factor, isPlayer) {
     const model = createCar(design, { merge: true, lite: !isPlayer }), stats = carStats(design);   // rivals use the lighter build
+    setPaintGloss(model, fullGloss(isPlayer));
     const holder = new THREE.Group(), blob = blobShadow(); holder.add(model.group, blob);
     // The car's shadow on the road is cast by ONE simple copy of its shape (see farModel) instead of its forty parts.
     // The copy is only seen by the sun's shadow camera (layer 1), never by the camera you watch through.
@@ -1705,7 +1710,7 @@ function endGridCam(leaving = false) {
 // The circuit's pictures (textures) are still arriving while the flight begins, and each one costs a moment's work the
 // first time it is drawn. Left alone, that moment comes whenever the camera first turns to face something new, as a
 // stutter in the middle of the sweep. So during the high opening shot they are made ready, one or two a frame.
-const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'alphaMap', 'emissiveMap', 'aoMap'];
+const TEX_SLOTS = ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'clearcoatMap', 'alphaMap', 'emissiveMap', 'aoMap'];
 function readyPictures(G, budget = 3) {
     if (G.t > GRID_CAM_TIME * 0.4) return;
     if (!G.pics || G.picsAt < G.t - 0.5) {   // (looked for again every half second: some arrive late)
@@ -2037,7 +2042,7 @@ function applyQuality(q) {
         sun.shadow.mapSize.set(Q.shadows, Q.shadows);
         const c = sun.shadow.camera; c.left = c.bottom = -Q.shadowSize; c.right = c.top = Q.shadowSize; c.near = 10; c.far = 400; c.updateProjectionMatrix();
     }
-    [player, ...rivals].forEach(r => { if (r) r.blob.material.opacity = wantShadows ? 0.55 : 1; });
+    [player, ...rivals].forEach(r => { if (r) { r.blob.material.opacity = wantShadows ? 0.55 : 1; setPaintGloss(r.model, fullGloss(r.isPlayer)); } });
     if (skyChanges && world && TRACK) setAtmosphere(TRACK.theme);   // (Low uses smaller sky pictures, and mixes its haze in differently)
     resize();
 }

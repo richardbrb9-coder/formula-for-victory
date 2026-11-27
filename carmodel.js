@@ -820,9 +820,13 @@ function liveryTexture(d, hd = false) {
     const box = isOffroad(d);                                    // (the Off-roader's sides are laid out by height: see offroad.js)
     const pxU = W / d.L, pxV = box ? H * V_SIDE : H / (2 * d.W + 2 * (d.deck - d.ride) + 0.4);   // pixels per metre along and around the body
     const team = TEAM_LIVERIES[d.livery];
-    if (team) single ? formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS }) : teamLivery(x, d, W, H, Y, band, pxU, pxV, box ? H * V_TOP / pxU : 0);
+    // The Formula racer's deep gloss (see paintMaterial) needs to know which parts of this picture are paint and which are
+    // stickers, numbers, logos and panel gaps: those are drawn a second time, as plain shapes, on a small marker picture
+    // ('xd' draws on both at once). On the marker, red says how much clear coat, green how smooth, blue how metallic.
+    const fin = FINISHES[d.finish] || FINISHES.gloss, mk = single && fin.clearcoat ? glossMarker(W, H, fin) : null, xd = mk ? onBoth(x, mk) : x;
+    if (team) single ? formulaTeam(x, d, W, H, Y, band, { sponsorSticker, SPONSORS, decals: xd }) : teamLivery(x, d, W, H, Y, band, pxU, pxV, box ? H * V_TOP / pxU : 0);
     const num = String(d.number || '').trim().slice(0, 2) || (team ? { rally: '4', endurance: '24', gt: '7' }[d.livery] : ''), tag = String(d.tag || '').trim().slice(0, 14);
-    if (single) { formulaMarks(x, d, W, H, Y, num, tag); formulaPanelLines(x, d, W, H, Y); }
+    if (single) { formulaMarks(xd, d, W, H, Y, num, tag); formulaPanelLines(xd, d, W, H, Y); }
     else for (const side of ['right', 'left']) {
         // (on the Off-roader the number is a little smaller and sits on the back door, clear of the rubbing strip and the handles)
         const v = side === 'right' ? (box ? 0.312 : 0.29) : (box ? 0.688 : 0.71), flipX = side === 'right' ? -1 : 1, flipY = side === 'right' ? 1 : -1;
@@ -837,8 +841,34 @@ function liveryTexture(d, hd = false) {
     }
     if (isHyper(d)) panelLines(x, d, W, H, Y, pxU, pxV); else if (isSuper90(d)) panelLines90(x, d, W, H, Y, pxU, pxV); else if (isLongtail(d)) panelLinesLT(x, d, W, H, Y, pxU, pxV); else if (isElectric(d)) panelLinesEV(x, d, W, H, Y, pxU, pxV); else if (isWedge70(d)) panelLines70(x, d, W, H, Y, pxU, pxV); else if (isGT60(d)) panelLines60(x, d, W, H, Y, pxU, pxV); else if (isV8it(d)) panelLinesV8(x, d, W, H, Y, pxU, pxV); else if (box) offroadPanelLines(x, d, W, H, Y);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = hd ? 8 : 4;
-    t.addEventListener('dispose', () => { if (CANVAS_POOL[S].length < 1) CANVAS_POOL[S].push(c); });   // (kept for the next car, see CANVAS_POOL)
+    if (mk) { const g = t.userData.gloss = new THREE.CanvasTexture(mk.canvas); g.colorSpace = THREE.NoColorSpace; g.anisotropy = 2; }   // (which parts are paint and which are stickers)
+    t.addEventListener('dispose', () => { if (CANVAS_POOL[S].length < 1) CANVAS_POOL[S].push(c); if (t.userData.gloss) t.userData.gloss.dispose(); });   // (kept for the next car, see CANVAS_POOL)
     return t;
+}
+// The marker picture for the Formula racer's paint: half the size of the livery, filled with 'this is paint'; whatever is
+// then drawn through onBoth lands on it as 'this is a sticker' (satin vinyl: less clear coat, less smooth, not metallic).
+const DECAL_ROUGH = 0.5, DECAL_MARK = 'rgb(77,255,38)';   // (red 0.3: a thin coat over the vinyl; green 1: as rough as the material goes; blue 0.15)
+function glossMarker(W, H, fin) {
+    const c = document.createElement('canvas'); c.width = W / 2; c.height = H / 2; const mk = c.getContext('2d'); mk.setTransform(0.5, 0, 0, 0.5, 0, 0);
+    mk.fillStyle = `rgb(255,${Math.round(255 * Math.min(1, gtRough(fin) / DECAL_ROUGH))},255)`; mk.fillRect(0, 0, W, H);
+    mk.fillStyle = mk.strokeStyle = DECAL_MARK;
+    return mk;
+}
+// a drawing surface that draws on the livery and, in the one marker colour, on the marker picture at the same time
+const STAMPS = new WeakMap();
+function onBoth(x, mk) {
+    const skip = new Set(['fillStyle', 'strokeStyle', 'globalAlpha', 'shadowColor', 'shadowBlur', 'filter', 'globalCompositeOperation']);
+    // (a loaded picture, such as a family's own logo, is stamped on the marker as its own shape in the marker colour)
+    const stamp = (img, ...at) => {
+        let st = STAMPS.get(img);
+        if (!st) { const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height, k = Math.min(1, 128 / Math.max(iw, ih, 1)); st = document.createElement('canvas'); st.width = Math.max(1, Math.round(iw * k)); st.height = Math.max(1, Math.round(ih * k));
+            const sx = st.getContext('2d'); sx.drawImage(img, 0, 0, st.width, st.height); sx.globalCompositeOperation = 'source-in'; sx.fillStyle = DECAL_MARK; sx.fillRect(0, 0, st.width, st.height); STAMPS.set(img, st); }
+        if (at.length === 4 || at.length === 2) mk.drawImage(st, ...at);
+    };
+    return new Proxy(x, {
+        get(t, k) { const v = t[k]; if (typeof v !== 'function') return v; return (...a) => { if (k === 'drawImage') stamp(...a); else if (k !== 'measureText' && k !== 'getImageData' && typeof mk[k] === 'function') mk[k](...a); return v.apply(t, a); }; },
+        set(t, k, v) { t[k] = v; if (!skip.has(k)) mk[k] = v; return true; }
+    });
 }
 // Paint canvases are kept and used again when a car is rebuilt (every slider move rebuilds the car), instead of making a new
 // big canvas each time: [1] holds the normal size, [2] the sharp size
@@ -1235,7 +1265,27 @@ const gtRough = f => f.clearcoat ? f.roughness * 0.6 : f.roughness;
 function paintMaterial(design, plain = false, hd = false) {
     const m = paintMaterialPlain(design, plain, hd), f = FINISHES[design.finish];
     if (isGT60(design) && f.clearcoat) { m.roughness = gtRough(f); m.clearcoatRoughness = 0.03; horizonShine(m, GT_SHINE.paint); }
+    // The Formula racer has the same deep, wet-look gloss as the 60s GT: smoother paint under a mirror-smooth clear coat,
+    // and the bright line along its flanks (horizonShine). Only the paint: stickers, numbers and logos on the livery are
+    // marked as satin (see glossMarker); tyres, carbon and the rest are other materials and are left as they were.
+    if (isFormula(design) && f.clearcoat) {
+        m.roughness = gtRough(f); m.clearcoatRoughness = 0.03; horizonShine(m, GT_SHINE.paint);
+        const mark = m.map && m.map.userData.gloss;
+        if (mark) { m.roughness = DECAL_ROUGH; m.roughnessMap = m.metalnessMap = m.clearcoatMap = mark; }
+        m.userData.coat = { clearcoat: f.clearcoat, mark: mark || null };   // (so setPaintGloss can take the clear coat off and put it back)
+    }
     return m;
+}
+// The clear coat is a second layer of shine worked out for every painted pixel, which adds up over eleven cars on a
+// tablet. full = true: the whole effect. false: the cheaper version (the same smooth paint, satin stickers and bright
+// line along the flanks, but without the clear coat's own layer of reflections). Racing uses the full effect on every
+// car on High graphics, and on your own car only on Medium and Low (see race.js). Safe to call at any time.
+export function setPaintGloss(model, full) {
+    for (const k of ['paint', 'paintPlain']) {
+        const m = model && model.mats && model.mats[k], c = m && m.userData.coat; if (!c) continue;
+        const coat = full ? c.clearcoat : 0; if (m.clearcoat === coat) continue;
+        m.clearcoat = coat; m.clearcoatMap = full ? c.mark : null; m.needsUpdate = true;
+    }
 }
 function paintMaterialPlain(design, plain, hd) {
     const f = FINISHES[design.finish], useMap = !plain && (hasLivery(design) || isDetailed(design));
