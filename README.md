@@ -20,7 +20,9 @@ works with no internet):
 
 Once it's installed, open the game while online now and then to pick up new versions.
 
-**Stage 5 (this version):** every driver is shown by name (yours with a small YOU tag), every helmet is painted in
+**Stage 6 (this version):** pit stops with a wheel-changing game in 5-lap races, three overtake boosts a race, a
+trophy cabinet, and a records board for every circuit.
+**Stage 5:** every driver is shown by name (yours with a small YOU tag), every helmet is painted in
 its team's colours, a race can begin with optional qualifying, and there is a new card game, Driver Cards.
 **Phase 4:** a championship season across all five circuits, a main menu with Championship, Quick
 race and Time trial, a How to play screen, Settings (with a volume control), and a crowd, countdown and fanfare made in
@@ -37,6 +39,9 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 | `teamdesign.js` | Turns a team into a car for the car builder (paint, pattern, logo, helmet colours): used by the racing and by the cards' pictures |
 | `cards.js` | Driver Cards: the card game against the computer (rules, screens, the saved pictures) |
 | `cardart.js` | Draws each card's car and helmet from the 3D models into two small pictures (only loaded when the cards are opened) |
+| `records.js` | The records board: your best lap, race and qualifying lap on every circuit, and the Records screen |
+| `trophies.js` | The trophy cabinet: the list of trophies, giving one, the "Trophy won!" message, and the Trophies screen |
+| `pitstop.js` | The pit stop: the PIT box painted on the road, the rivals' bays, the PIT sign, and the wheel-changing game's panel |
 | `season.js` | The championship's rules: the order of the races, the points, the tables, saving and mending a season |
 | `championship.js` | The championship's screens: a new season, the season so far, after each race, the champion |
 | `sound.js` | The volume control every sound goes through, menu taps, countdown beeps, the crowd and the fanfare |
@@ -130,6 +135,8 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
   themselves are as quick as in a single race. With eleven teams of one car each, the teams' table follows the drivers'.
 - With qualifying on, the grid comes from qualifying instead (see below) and `grid()` is not used.
 - Testing: `window.__autopilot = true` (or `__kidbot`), `__noGridCam = true` and `__timeScale = 4` play a race quickly.
+  `__autopilot = 'steer'` only steers and holds GO down, like a child relying on the driving help. `__pitBot = true`
+  makes the test driver come in for one pit stop; `__pits = true` opens the pits in a shorter race.
   Keep `__timeScale` at 4 or less: higher than that the cars' springs go wrong and the bodies vanish from the podium.
 
 ## Qualifying (optional)
@@ -143,6 +150,9 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
   laps with nobody in the way, for the quickest and slowest car at this level of rivals. Each driver's time sits
   between the two by their `pace`, with some luck. So the grid is honest: a rival who qualifies ahead is quicker in the
   race too, and a good lap can win pole.
+- On Easy the rivals race gently, and at that pace their qualifying laps were 10 to 15 seconds slower than a child's.
+  So in qualifying only, the Easy rivals push harder than they race (`QUALI_PACE` in `race.js`): the table looks like a
+  real one, a decent lap still wins pole, and a scruffy one does not. Medium and Hard qualify exactly as they race.
 - **Skip qualifying** (on its first panel and on the pause box) puts you at the back, exactly like qualifying off, so
   skipping can never beat driving a lap.
 - The grid flyover and the race then start from those places. "Race again" keeps the same grid.
@@ -165,12 +175,85 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
 - Your own team's card also shows what you have done in this game (`ffv_stats`: races, wins, podiums, poles, titles).
 - `window.__cardRand` (testing) makes the shuffle repeatable.
 
+## Overtake boosts (`race.js`)
+
+- Three a race (`BOOSTS`). Each gives about three seconds of a higher top speed and a stronger push (`BOOST_TOP`,
+  `BOOST_PUSH`): worth two or three car lengths. **Speed only: a boost never changes grip, steering or braking**, and
+  the driving help still slows the car for corners.
+- The big ⚡ button sits above BRAKE, under the right thumb, and shows how many are left. On a laptop it is **B** (Space
+  is already the brake). Races only: not in qualifying or a time trial.
+- On Medium the rivals have two and on Hard three (none on Easy). They use one now and then on a straight, with a car
+  close ahead. Every boosting car trails the same glowing streak (one shape and one picture, shared), a replay shows
+  the streaks again, and the whoosh is made in code.
+
+## Pit stops (`pitstop.js`, `race.js`)
+
+- Only in 5-lap races (a quick race or a championship set to 5 laps), from lap 2, and never forced.
+- The circuits have no pit lane you can drive down (the pit lanes in the scenery are pictures beyond the wall). So the
+  **PIT box is painted on the road itself**, at the edge on the pit wall's side, 56 m past the start line: clear of the
+  grid (behind the line), the gantry (on the line) and the podium (12 m past it). Three plain bays for the rivals follow
+  it, and a PIT sign stands on a post behind the barrier. All of it is three small things to draw.
+- **A new circuit** only needs `pit: { side, at }` in its data file (`side`: 1 the driver's left, -1 the right; `at`:
+  metres past the start line). Left out, the box goes on the right, 56 m past the line.
+- A "PIT" hint comes up as you approach. Roll into the box at under about 47 mph (`PIT_SPEED`) and the crew catch the
+  car. Each of the four wheels takes two taps (old one off, new one on), or keys 1 to 4. The clock runs from the moment
+  you stop to the last wheel; the race clock never stops, so the rivals keep racing.
+- The reward: all three boosts back, and a car that looks like new (crash damage only ever changed its looks).
+- Each rival stops once, on its second, third or fourth lap (shared out so they do not all come in together), for
+  2.6 to 4.4 seconds, in the furthest free bay. If every bay is taken it tries again next lap; nobody pits on the last
+  lap. Cars still racing go round a car standing in the pits.
+- A stop is part of the race like any other moment: positions, lap counting, the little map, the replay (the car is
+  cleaned at the same moment in the replay) and the working-out of the finishing order all carry on as usual.
+
+## Trophies (`trophies.js`)
+
+- Kept under `ffv_trophies` as `{ id: when it was won }`. Once won, a trophy is never taken away. Never change a
+  trophy's `id`.
+- **Nothing is hard-wired to the number of circuits.** Each circuit in `circuits/index.js` gets a "win at ..." trophy
+  (`win_` and the circuit's id), and "World tour" means a win on every circuit in that list. Add a circuit and the
+  cabinet grows by itself.
+- `FFV.trophies.award(id)` gives one (once): it saves it, slides a message in over whatever is on screen, and plays a
+  short fanfare. `race.js` gives the racing ones, `championship.js` the champion's, `cards.js` the card game's.
+- The pictures are drawn in code (a cup, a medal, a shield or a star, in gold, silver or bronze). No downloads.
+- A "clean race" is one with no barrier hit and no hard bump with another car while you were racing.
+
+## Records (`records.js`)
+
+- For every circuit: best lap, best race time over 3 laps and over 5 laps (kept apart), and best qualifying lap, each
+  with its date. Kept under `ffv_records`. Shown on the Records screen, on each circuit's card, on the set-up screen,
+  and as "New record!" on the results.
+- **The best lap is the lap your ghost drives.** Only a proper flying lap counts for it: from the line to the line (a
+  race's first lap starts from the grid, so it does not), with no boost and no pit stop in it. That keeps the time
+  trial fair: a lap you could only do with a boost would be a ghost you could never catch.
+- Every lap you drive is recorded, twenty times a second. When a lap is a new best, in a time trial, in qualifying or
+  in a race, its recording becomes the ghost (`ffv_ghost_<circuit>`), exactly as the time trial always kept it.
+- Best laps from before the records board (`ffv_raceBest_<circuit>`) are carried over without a date, and that key is
+  still kept up to date for the racing screen's "Best".
+
+## What is saved on the device
+
+Everything starts with `ffv_`. Every one is read carefully: anything missing or damaged is simply left out.
+
+| Key | What it holds |
+| --- | --- |
+| `ffv_champ`, `ffv_champSetup`, `ffv_champBest` | The season, the choices for a new one, your best finish at each level |
+| `ffv_records` | The records board (new in Stage 6) |
+| `ffv_trophies` | The trophies you have won (new in Stage 6) |
+| `ffv_raceBest_<circuit>`, `ffv_ghost_<circuit>` | Your best lap there, and its ghost |
+| `ffv_medals`, `ffv_stats`, `ffv_cardWins`, `ffv_cardsSetup` | Medals for each circuit and level, what you have done (for your Driver Card), card games |
+| `ffv_names`, and the databases `ffv_teams` and `ffv_cards` | My teams: names and colours, logos, and the cards' pictures |
+| `ffv_laps`, `ffv_difficulty`, `ffv_quali`, `ffv_team`, `ffv_units`, `ffv_raceCam`, `ffv_raceHelp`, `ffv_raceSound`, `ffv_raceEngine`, `ffv_volume`, `ffv_raceQuality`, `ffv_autoLevel` | Your choices on the menus and the racing screen |
+
 ## Sound
 
 - Every sound must go to `window.audioOut()` (never straight to the speakers), so the volume and mute work on it.
 - `ffv_raceSound` is the mute and `ffv_volume` is 1, 2 or 3. The loudspeaker button, Settings and the racing screen's
   Sound button all change the same setting.
 - When the app is hidden the whole sound system is put to sleep; cheers and the fanfare are cut off on leaving a screen.
+- Sounds are only made while the sound system is running, and each short sound unplugs itself when it ends (a
+  listener used once). Before, every beep asked for while it was asleep waited in a pile and was never cleared away.
+- The racing screen's own listeners on the window (keys, losing focus, the app being hidden) are added as a race
+  starts and all taken away together on leaving it (`listen` and `unlisten` in `race.js`, one AbortController).
 
 ## Adding a circuit
 
@@ -182,7 +265,8 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
    hills or crosses itself on a bridge (see `monaco.js`: heights in metres at points round the lap, joined by slopes and
    rounded off). A street circuit also sets `tightWalls` (keeps the camera between the walls) and lists its `tunnels`.
 4. Write its scenery file, switch it on in `circuits/index.js`, add its files to `sw.js`, and give it a place in the
-   season (`ROUNDS` in `season.js`).
+   season (`ROUNDS` in `season.js`). Its trophy, its place in "World tour" and its records come by themselves from
+   the list. Say where its pit box goes with `pit: { side, at }` (see Pit stops), and check it is on a straight.
 5. Give it a `backdrop` (see `monaco.js` and the notes at the top of `backdrop.js`): which sky photo, the colour of the
    haze, its light and colour grade, and the layers of its painted horizon (ridges, woods, fields, a town, the sea,
    by compass bearing). A new sky photo is made with `tools/bake_sky.py` and listed in `SKIES` in `backdrop.js`, in
@@ -238,7 +322,10 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
 - Crash damage changes how a car looks, never how it drives. Weather never changes grip.
 - Everything saved on the device starts with `ffv_` (the owner's other apps share the same web address), and so does
   the logos' database.
-- `sw.js`: bump `CACHE_NAME` on every change; it only ever deletes caches starting `formula-for-victory-`.
+- `sw.js`: bump `CACHE_NAME` on every change; it only ever deletes caches starting `formula-for-victory-`. Each time
+  the app is opened it fetches any saved picture or sound that is missing (a patchy connection while installing could
+  leave one out), and a road picture that fails to load is asked for again (`photoTex` in `scenery.js`).
+- Touch targets are at least 44 px each way, the buttons along the top of the racing screen included.
 - Keep the number of separate things drawn low (tablets): build scenery, then bake it with `SC.mergeStatic` (one mesh per
   material), share materials between copies (`shareMaterials` in `circuits/common.js` does it for buildings made one at a time, like
   a pit building in several blocks), and plant all of a circuit's trees in one `SC.plantTrees` call. Rivals are drawn
