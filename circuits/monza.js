@@ -16,6 +16,8 @@ export const MONZA = {
     elevation: null,
     // between the road and the wall: grass 6 m wide with a steel barrier, unless a zone below says otherwise
     runoff: { w: 6, surface: 'grass', barrier: 'steel' },
+    // the pit box painted on the road for 5-lap races (see pitstop.js): on the pit wall's side (1 = the driver's left, -1 = the right), its middle this many metres past the start line
+    pit: { side: -1, at: 56 },
     zones: [
         // the start straight: pit wall on the right, grandstands behind a fence on the left
         { from: 5230, to: 210, side: 'R', w: 2.5, barrier: 'concrete', fence: true },

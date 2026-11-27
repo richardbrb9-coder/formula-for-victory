@@ -15,6 +15,7 @@ import * as BD from './backdrop.js';
 import { Post } from './post.js';
 import { createCar, carStats } from './carmodel.js';
 import { teamDesign } from './teamdesign.js';
+import { pitLayout, buildPitMarks, PitPanel, BAY_GAP } from './pitstop.js';
 
 // =====================================================================
 //  THE TRACK (built by track.js from the circuit's data; everything else is placed along it)
@@ -182,6 +183,14 @@ let lapsChosen = 3, playerTeam = 5, onExit = null; // set by the menus (see star
 let onGrid = null;                                // told the grid as soon as qualifying has set it (the championship saves it)
 let champ = null;                                 // a championship race: { round, of, field, points, onFinish } (see start)
 let race = null;                                  // { phase: 'grid'|'lights'|'go'|'done', t, lightsT, results }
+// OVERTAKE BOOSTS (races only): three a race, each a few seconds of extra top speed and push. Speed only: a boost never
+// changes the grip or the steering. A pit stop gives them back. On Medium and Hard the rivals have some too.
+const BOOSTS = 3, BOOST_TIME = 3, BOOST_TOP = 1.07, BOOST_PUSH = 1.45, RIVAL_BOOSTS = { easy: 0, medium: 2, hard: 3 }, RIVAL_BOOST_TOP = 1.06, RIVAL_BOOST_PUSH = 1.35;
+// PIT STOPS (5-lap races only, and never forced): see pitstop.js for the painted box and the wheel-changing game.
+// PIT: where this circuit's box and bays are; PIT_SPEED: the quickest you can be going for the crew to catch the car.
+let PIT = null, pitMarks = null, pitPanel = null;
+const PIT_SPEED = 21, PIT_SHOW = 1.4;             // metres a second (about 47 mph); seconds your stop time stays on screen before you are let go
+const pitsOpen = () => mode === 'race' && (raceLaps() >= 5 || !!window.__pits);   // (__pits: testing only, pit stops in a shorter race)
 const input = { left: false, right: false, gas: false, brake: false, tilt: 0 };
 // camera views: 0 chase, 1 close chase, 2 bonnet, 3 cockpit (from the driver's seat)
 const CAM_NAMES = ['Chase camera', 'Close chase camera', 'Bonnet camera', 'Cockpit view'];
@@ -302,7 +311,7 @@ function setupRace() {
     player.cockpit = buildCockpit(player.design, window.getUnits ? window.getUnits() : 'mph');   // drawn by drawFrame, in its own pass
     applyCameraView();
     // grid: two staggered columns behind the start line, like a real Grand Prix; you start at the back in a race
-    const slots = GRID;
+    const slots = GRID; let startSlot = null;
     const place = (r, [back, side]) => {
         const s = sampleAt(trackLen + back);
         r.x = s.p.x + s.n.x * side; r.y = s.p.y; r.z = s.p.z + s.n.z * side; r.heading = s.heading; r.d = back; r.lap = -1; r.half = true;
@@ -322,7 +331,7 @@ function setupRace() {
             r.lineOffset = ((i % 3) - 1) * 1.6;
             rivals.push(r); scene.add(r.holder); place(r, free[i]);
         }
-        place(player, slots[mine]);
+        place(player, slots[mine]); startSlot = mine;
     } else {
         // a time trial starts just behind the line; qualifying a good way back, so you cross the line at speed
         place(player, [mode === 'quali' ? -QUALI_RUN : -12, 0]);
@@ -339,7 +348,17 @@ function setupRace() {
     dmg.clearPieces();
     for (const r of [player, ...rivals]) dmg.fit(r);
     try { for (const o of dmg.warmUp(player)) { const was = o.visible; o.visible = true; renderer.compile(o, camera, scene); o.visible = was; } } catch (e) { /* made ready at the first bump instead */ }
-    race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], tapeTimes: [], hits: [] };
+    race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], tapeTimes: [], hits: [],
+        startSlot, pit: null, crashed: false, newLap: null };   // (startSlot: your grid box, 0 = pole; pit: a pit stop in progress; crashed: you have hit something; newLap: a lap record set in this race)
+    // boosts and pit stops: everyone starts with a full set of boosts; in a 5-lap race each rival plans one stop, on
+    // its second, third or fourth lap, shared out so that they don't all come in together
+    const pits = pitsOpen(), span = Math.max(1, raceLaps() - 2), turn = rivals.map((_, i) => i).sort(() => Math.random() - 0.5);
+    Object.assign(player, { boosts: mode === 'race' ? BOOSTS : 0, boostT: 0, boostsUsed: 0, boostOn: false, pitStops: 0, pitLap: -1, lapBoosted: false, lapPitted: false });
+    rivals.forEach((r, i) => Object.assign(r, { boosts: RIVAL_BOOSTS[difficulty] || 0, boostT: 0, boostOn: false, boostWait: 8 + Math.random() * 14,
+        ps: pits ? { plan: 1 + turn[i] % span, hold: 2.6 + Math.random() * 1.8, state: null, bay: -1, target: 0, until: 0, out: 0, done: false } : null }));
+    if (pitMarks) pitMarks.visible = pits;
+    closePit(); lastBoostHud = ''; lastPitHint = null;
+    { const st = document.getElementById('race-stage'); st.classList.toggle('boost-on', mode === 'race'); st.classList.remove('pitting'); }
     updateCars(0); placeCamera(true);
     if (mode === 'quali') startQuali(); else quali = null;
     startGridCam();
@@ -354,6 +373,10 @@ const validGrid = g => Array.isArray(g) && g.length === TEAMS.length && new Set(
 //  Skipping it puts you at the back of the grid, exactly as if qualifying were switched off.
 // =====================================================================
 const QUALI_RUN = 220, QUALI_TRIES = 2;   // metres before the line that you set off from; how many flying laps you may have
+// How quick the rivals are in qualifying. On Medium and Hard, exactly as quick as they race. On Easy they race gently
+// (0.8), and their qualifying laps at that pace were 10 to 15 seconds slower than a child's: nobody would believe the
+// table. So in qualifying the Easy rivals push harder than they race: a decent lap still wins pole, a scruffy one won't.
+const QUALI_PACE = { easy: 0.865 };
 // One flying lap by a rival with nobody in the way: the very same sums that drive the rivals in a race (see driveRival),
 // run quickly round two laps. The second lap, started at full speed, is the one that is timed.
 function simLap(factor) {
@@ -368,10 +391,10 @@ function simLap(factor) {
 }
 function startQuali() {
     // the quickest and slowest a rival can be at this level (the same spread of speeds as the cars on a race's grid)
-    const quick = simLap(DIFF[difficulty]), slow = simLap(DIFF[difficulty] * (1 - 0.06 * (fieldSize - 1) / fieldSize)), rand = window.__qualiRand || Math.random;
+    const pace = QUALI_PACE[difficulty] || DIFF[difficulty], quick = simLap(pace), slow = simLap(pace * (1 - 0.06 * (fieldSize - 1) / fieldSize)), rand = window.__qualiRand || Math.random;
     // each driver's lap: nearer the quick end the more 'pace' they have (teams.js), with some luck either way
     const times = TEAMS.map((t, i) => ({ team: i, time: i === playerTeam ? null : quick + (slow - quick) * Math.max(-0.08, Math.min(1.08, 1 - t.pace + (rand() - 0.5) * 0.5)) + (rand() - 0.5) * 0.12 }));
-    quali = { times, best: null, tries: 0, skipped: false, counted: false };
+    quali = { times, best: null, tries: 0, skipped: false, counted: false, record: false };
     race.phase = 'qintro'; qualiPanel();
 }
 // the order after qualifying: quickest first; anyone without a time (you, if you skipped it) at the back
@@ -394,7 +417,7 @@ function qualiPanel() {
             return `<tr class="${me ? 'me' : ''}"><td>${i + 1}</td><td>${badge({ teamIdx: r.team, colour: t.paint })}${escapeHtml(t.driver)}${me ? YOU_TAG : ''} <small>${escapeHtml(t.team)}</small></td><td>${r.time == null ? 'no time' : fmtTime(r.time)}</td><td>${r.time == null ? '' : i === 0 ? 'POLE' : '+' + (r.time - pole).toFixed(2)}</td></tr>`; }).join('');
         const title = Q.skipped && Q.best == null ? `You start ${ordinal(pos)}, at the back` : pos === 1 ? 'Pole position!' : `You qualified ${ordinal(pos)}`;
         const note = Q.skipped && Q.best == null ? 'You skipped qualifying, so you start behind everyone who set a time.' : pos === 1 ? `Your lap of ${fmtTime(Q.best)} was the quickest of all. You start at the very front.` : `Your best lap was ${fmtTime(Q.best)}, ${(Q.best - pole).toFixed(2)} seconds off pole.`;
-        el.innerHTML = `<div class="rr-box champ-box quali-box"><span class="kicker">${kick}</span><h2>${title}</h2><p class="q-how">${note}</p>
+        el.innerHTML = `<div class="rr-box champ-box quali-box"><span class="kicker">${kick}</span><h2>${title}</h2><p class="q-how">${note}</p>${Q.record ? `<p class="rr-record">⭐ New record! Your best qualifying lap at ${escapeHtml(TRACK.name)}.</p>` : ''}
             <table class="champ-table quali-table"><thead><tr><th></th><th>Driver</th><th>Lap time</th><th>Gap</th></tr></thead><tbody>${body}</tbody></table>
             <div class="rr-actions"><button class="big-btn" data-race="qrace">🏁 Start the race from ${ordinal(pos)}</button>${left > 0 && !Q.skipped ? `<button class="act-btn" data-race="qretry">🔁 One more go</button>` : ''}<button class="act-btn ghost" data-race="menu">${champ ? 'Save and quit' : 'Menu'}</button></div>
             <p class="small q-skipnote">This is the starting grid for the race.${champ ? ' It is saved with your season.' : ''}</p></div>`;
@@ -406,7 +429,7 @@ function qualiGo() {
     if (!quali || (race.phase !== 'qintro' && race.phase !== 'qdone')) return;
     const s = sampleAt(trackLen - QUALI_RUN), r = player;
     Object.assign(r, { x: s.p.x, y: s.p.y, z: s.p.z, heading: s.heading, d: -QUALI_RUN, lap: -1, half: true, v: 0, steer: 0, lat: 0, latV: 0, laps: [], lapStart: race.raceTime, idx: T.indexAt(trackLen - QUALI_RUN) });
-    race.lapTimes = []; race.cornerShown = null; if (ghost) { ghost.lapT0 = null; ghost.holder.visible = false; }
+    race.lapTimes = []; race.recording = []; race.cornerShown = null; if (ghost) { ghost.lapT0 = null; ghost.holder.visible = false; }
     document.getElementById('race-result').hidden = true;
     const skip = document.getElementById('race-qskip'); if (skip) skip.textContent = quali.tries ? 'Stop: keep my first lap' : 'Skip qualifying';   // (on a second go, stopping keeps the lap you already have)
     race.phase = 'go'; updateCars(0); placeCamera(true); lastHud = '';
@@ -424,7 +447,7 @@ function qualiDone(lapTime, skipped = false) {
     gridOrder = order.map(r => r.team);
     if (onGrid) { try { onGrid(gridOrder.slice(), { pos, time: Q.best, skipped: Q.skipped && Q.best == null }); } catch (e) { console.error(e); } }
     if (lapTime != null && window.playSound) { window.playSound(pos === 1 ? 'win' : 'go'); if (pos <= 3) window.playSound('cheer'); }
-    if (pos === 1 && Q.best != null && !Q.counted) { Q.counted = true; window.FFV.myStats.add('poles'); }   // (pole position: one for your own Driver Card, counted once)
+    if (pos === 1 && Q.best != null && !Q.counted) { Q.counted = true; window.FFV.myStats.add('poles'); window.FFV.trophies.award('pole'); }   // (pole position: one for your own Driver Card, counted once, and a trophy)
     qualiPanel();
 }
 // from the grid's table into the race itself
@@ -464,10 +487,15 @@ function lapCrossing(r, prevIdx) {
 }
 function drivePlayer(dt) {
     const r = player, P = r.perf, go = race.phase === 'go' || race.phase === 'done';
+    if (race.pit) {   // in the pit box: the car stands still, on its jacks, until the wheels are changed (the race clock runs on)
+        r.v = 0; r.steer *= Math.max(0, 1 - dt * 10); r.brakeLamp = 1; holdLamp(r); r.throttle = false; r.slip = r.sliding = r.onGrass = r.boostOn = false;
+        return;
+    }
     // steering: keys/buttons or tilt
     let steerIn = (input.left ? 1 : 0) - (input.right ? 1 : 0);
     if (Math.abs(input.tilt) > 0.05) steerIn = Math.max(-1, Math.min(1, input.tilt));
     let gas = input.gas, brake = input.brake, lamp = 0;
+    const auto = window.__autopilot && window.__autopilot !== 'steer';   // (testing: 'steer' only steers and holds GO down, like a child relying on the driving help)
     if (window.__kidbot) {                    // test driver: flat out, steers late with a slow reaction, never brakes
         const tgt = sampleAt(samples[r.idx].d + 10 + r.v * 0.25);
         let want = Math.atan2(-(tgt.p.z - r.z), tgt.p.x - r.x) - r.heading; while (want > Math.PI) want -= Math.PI * 2; while (want < -Math.PI) want += Math.PI * 2;
@@ -482,11 +510,20 @@ function drivePlayer(dt) {
         steerIn = Math.max(-1, Math.min(1, want * 3));
         let target = P.vmax;
         for (let ahead = 0, far = r.v * r.v / (2 * P.brake * 0.7) + 40; ahead <= far; ahead += 8) { const k = Math.abs(sampleAt(here + ahead).ks); const vc = k > 1e-4 ? Math.sqrt(P.grip * 0.85 / k) : P.vmax; target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.7 * ahead)); }
+        // (__pitBot: testing only, the test driver comes in for a pit stop: once, or as many times as the number says)
+        if (window.__pitBot && pitsOpen() && race.phase === 'go' && r.pitStops < (window.__pitBot === true ? 1 : window.__pitBot)) {
+            const lapAtBox = here > PIT.to ? r.lap + 1 : r.lap, ahead = (((PIT.d - here) % trackLen) + trackLen) % trackLen;
+            if (lapAtBox >= 1 && lapAtBox < raceLaps() && r.pitLap !== lapAtBox && ahead < 320) {
+                const aim = pathAt(here + Math.min(ahead, 8 + r.v * 0.25), PIT.lat, 0); want = wrapAngle(Math.atan2(-(aim.z - r.z), aim.x - r.x) - r.heading); steerIn = Math.max(-1, Math.min(1, want * 3));
+                target = Math.min(target, Math.sqrt(14 * 14 + 2 * P.brake * 0.6 * Math.max(0, ahead - 10)));
+            }
+        }
         gas = r.v < target; brake = r.v > target + 2;
+        if (!auto) { gas = true; brake = false; }
     }
     const s = samples[r.idx], lat = (r.x - s.p.x) * s.n.x + (r.z - s.p.z) * s.n.z;
     const playerGrip = P.grip * 1.3;                        // arcade grip: more forgiving than the rivals
-    if (help && !window.__autopilot && go) {
+    if (help && !auto && go) {
         // driving help 1: ease off before a corner you're going too fast for
         const here = samples[r.idx].d; let target = P.vmax;
         for (let ahead = 0, far = r.v * r.v / (2 * P.brake * 0.6) + 30; ahead <= far; ahead += 8) { const k = Math.abs(sampleAt(here + ahead).ks); const vc = k > 1e-4 ? Math.sqrt(playerGrip * (TRACK.tightWalls ? 0.76 : 0.9) / k) : P.vmax; target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.6 * ahead)); }   // (a little more careful between close walls)
@@ -514,8 +551,11 @@ function drivePlayer(dt) {
     const vmax = onGrass ? Math.min(P.vmax, gravel ? 24 : 30) : P.vmax;
     r.throttle = go && gas;                                  // (for the sounds: pops when you lift off, the turbo)
     let a = 0;
-    const vTop = r.slip ? vmax * 1.05 : vmax;
-    if (go && gas) a += P.a0 * Math.max(0.1, 1 - (r.v / vTop) ** 2) * (r.slip ? 1.15 : 1);
+    // an overtake boost: for a few seconds a higher top speed and a stronger push. Only those two: the grip, the steering
+    // and the braking are exactly as always (and off the road it does nothing at all)
+    const boosting = r.boostT > 0 && race.phase === 'go'; if (r.boostT > 0) r.boostT -= dt; r.boostOn = boosting;
+    const vTop = (r.slip ? vmax * 1.05 : vmax) * (boosting && !onGrass ? BOOST_TOP : 1);
+    if (go && gas) a += P.a0 * Math.max(0.1, 1 - (r.v / vTop) ** 2) * (r.slip ? 1.15 : 1) * (boosting && !onGrass ? BOOST_PUSH : 1);
     if (brake) a -= r.v > 0.5 ? P.brake : 3;           // brake, then gently reverse
     if (brake && r.v > 0.5) lamp = 1;                   // (your own braking shows red, even if the help is braking too)
     r.brakeLamp = go ? lamp : 0; holdLamp(r);
@@ -528,7 +568,7 @@ function drivePlayer(dt) {
     // driving help 3: on the straights the steering is gentler, so a tap on the arrow at 200 mph doesn't throw the car
     // sideways; it sharpens up by itself as a corner arrives
     const bend = Math.max(Math.abs(s.ks), Math.abs(samples[(r.idx + 12) % N].ks), Math.abs(samples[(r.idx + 24) % N].ks));
-    const assisted = help && !window.__autopilot;
+    const assisted = help && !auto;
     const calm = assisted ? Math.min(1, 0.36 + bend / 0.006) : 1;
     const grip = playerGrip * (onGrass ? 0.7 : 1) * calm;
     // driving help 4: the front wheels never turn further than the tyres can grip at this speed, so holding an arrow
@@ -559,26 +599,189 @@ function drivePlayer(dt) {
             efx.sparksAt(r.x + s2.n.x * sg * 1.0, r.y + 0.4, r.z + s2.n.z * sg * 1.0, Math.cos(r.heading), -Math.sin(r.heading), Math.min(40, 8 + r.v));
             efx.bump(Math.min(0.8, r.v / 60));
             carHit(r, s2.n.x * sg, s2.n.z * sg, Math.min(0.7, r.v / 60), null, r.v < 30);   // a scuff from the barrier (a hard hit can leave a dent)
+            if (race.phase === 'go') race.crashed = true;   // (no "clean race" trophy this time)
         }
         r.v *= 0.82;
     }
     r.lastLat = lat2;
     if (go) lapCrossing(r, prevIdx);
+    if (race.phase === 'go' && PIT && pitsOpen()) pitCheck(r, lat2);
+}
+
+// =====================================================================
+//  PIT STOPS (yours). Drive slowly into the painted box and the crew catch the car: it stops, the four wheels come up
+//  on screen, and each one takes two taps (old wheel off, new wheel on; or keys 1 to 4). The race clock never stops,
+//  so the rivals keep racing. Your reward: a full set of boosts, and a car that looks like new again.
+// =====================================================================
+function pitCheck(r, lat) {
+    const s = samples[r.idx], rel = s.d + (r.x - s.p.x) * s.t.x + (r.z - s.p.z) * s.t.z - PIT.d;
+    const inside = Math.abs(rel) < PIT.len / 2 - 0.4 && Math.abs(lat - PIT.lat) < PIT.w / 2 + 0.3;
+    if (!inside) { r.inBox = false; return; }
+    const first = !r.inBox; r.inBox = true;
+    if (r.finished != null || r.pitLap === r.lap || r.v < 0) return;            // (already stopped on this lap)
+    if (r.lap < 1) { if (first && r.v < 45) flash('The pit box opens on lap 2', 1600); return; }
+    if (r.v > PIT_SPEED) { if (first && r.v < 45) flash('Too fast for the pit box! Slow right down', 1800); return; }
+    startPit();
+}
+function startPit() {
+    const r = player, at = pathAt(PIT.d + 1.2, PIT.lat, 0);                      // (rolled up to the stop line)
+    Object.assign(r, { x: at.x, z: at.z, heading: at.heading, v: 0, steer: 0, idx: T.indexAt(PIT.d + 1.2), boostT: 0, boostOn: false, pitLap: r.lap, lapPitted: true });
+    Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; });
+    // which of the car's wheels is which: 0 front left, 1 front right, 2 rear left, 3 rear right (as on the panel)
+    const c = Math.cos(r.heading), sn = Math.sin(r.heading), v3 = new THREE.Vector3(), wheels = [];
+    r.holder.position.set(r.x, r.y, r.z); r.holder.rotation.y = r.heading; r.holder.updateMatrixWorld(true);
+    for (const w of r.model.wheels) { w.getWorldPosition(v3); const dx = v3.x - r.x, dz = v3.z - r.z; wheels[(dx * c - dz * sn > 0 ? 0 : 2) + (dx * sn + dz * c > 0 ? 1 : 0)] = w; }
+    race.pit = { t0: race.raceTime, taps: [0, 0, 0, 0], time: null, leaveAt: 0, wheels };
+    if (!pitPanel) pitPanel = new PitPanel(document.getElementById('race-canvas-wrap'), document.getElementById('race-pause-panel'), pitTap, () => endPit(false));
+    pitPanel.open(!(window.matchMedia && matchMedia('(pointer: coarse)').matches), PIT.side, r.design);
+    document.getElementById('race-stage').classList.add('pitting');
+    clearTimeout(flashTimer); document.getElementById('race-flash').classList.remove('show');
+    if (soundOn && window.playSound) window.playSound('pit');
+}
+// one tap on wheel i (0 to 3): the first takes the old wheel off, the second puts the new one on
+function pitTap(i) {
+    const P = race && race.pit; if (!P || P.time != null || race.paused || !(i >= 0 && i < 4) || P.taps[i] >= 2) return;
+    P.taps[i]++; pitPanel.wheel(i, P.taps[i]); if (P.wheels[i]) P.wheels[i].visible = P.taps[i] !== 1;
+    if (soundOn && window.playSound) window.playSound('gun');
+    if (!P.taps.every(n => n >= 2)) return;
+    // all four are on: the stop is timed, and the reward is yours
+    P.time = race.raceTime - P.t0; P.leaveAt = race.raceTime + PIT_SHOW;
+    const t = P.time, word = t < 3 ? 'lightning stop!' : t < 4.5 ? 'great stop!' : t < 7 ? 'good stop!' : 'wheels on. Off you go!';
+    pitPanel.time(t); pitPanel.result(`${t.toFixed(1)} s, ${word}`);
+    player.boosts = BOOSTS; player.pitStops++; freshen(player);
+    if (soundOn && window.playSound) window.playSound('pitdone');
+    if (t < 3) window.FFV.trophies.award('pit_fast');
+}
+// let the car go again (done: the wheels were changed; otherwise the driver chose to drive on, with no reward)
+function endPit(done) {
+    const P = race && race.pit; if (!P) return;
+    if (!done && P.time != null) return;
+    for (const w of P.wheels) if (w) w.visible = true;
+    race.pit = null; closePit(); lastHud = '';
+    flash(done ? 'GO! GO! GO!' : 'Back on track', 1200);
+}
+function closePit() { if (pitPanel) pitPanel.close(); const st = document.getElementById('race-stage'); if (st) st.classList.remove('pitting'); }
+// the pit crew have been over a car: it looks as good as new (remembered, so a replay cleans it at the same moment)
+function freshen(r) {
+    if (race.ff) return;
+    dmg.reset(r); r.hitAt = -9;
+    race.hits.push({ t: race.raceTime, k: r.isPlayer ? 0 : rivals.indexOf(r) + 1, fresh: true });
+}
+// each frame of a stop: the big clock, and off you go once your time has been shown
+function pitFrame() {
+    const P = race.pit;
+    pitPanel.time(P.time != null ? P.time : race.raceTime - P.t0);
+    if (P.time != null && race.raceTime >= P.leaveAt) endPit(true);
+}
+// "PIT": a hint on screen as you come up to the box, while a stop would do you some good
+let lastPitHint = null;
+function pitHint() {
+    const el = document.getElementById('race-pit-hint'); if (!el) return;
+    let text = '';
+    const r = player;
+    if (PIT && pitsOpen() && race.phase === 'go' && !race.pit && r.finished == null && (r.pitStops === 0 || r.boosts < BOOSTS)) {
+        const here = samples[r.idx].d, lapAtBox = here > PIT.to ? r.lap + 1 : r.lap, ahead = (((PIT.d - here) % trackLen) + trackLen) % trackLen;
+        if (lapAtBox >= 1 && lapAtBox < raceLaps() - 1 && r.pitLap !== lapAtBox && ahead < 430 && ahead > 6) text = r.v > PIT_SPEED + 4 ? 'slow' : 'in';
+    }
+    if (text === lastPitHint) return; lastPitHint = text;
+    el.hidden = !text; if (!text) return;
+    const left = PIT.side > 0;
+    el.className = 'race-pit-hint ' + (left ? 'left ' : 'right ') + text;
+    el.innerHTML = `<b>${left ? '◀ PIT' : 'PIT ▶'}</b><span>${text === 'slow' ? `Brake! Stop in the yellow box on the ${left ? 'left' : 'right'}` : `Roll into the yellow box on the ${left ? 'left' : 'right'}`}</span>`;
+}
+
+// =====================================================================
+//  OVERTAKE BOOSTS
+// =====================================================================
+function useBoost() {
+    const r = player; if (!race || mode !== 'race' || race.phase !== 'go' || race.paused || race.pit || !r || r.finished != null || r.boostT > 0) return;
+    if (r.boosts <= 0) { flash(pitsOpen() ? 'No boosts left. A pit stop gives them back' : 'No boosts left', 1400); return; }
+    r.boosts--; r.boostsUsed++; r.boostT = BOOST_TIME; r.lapBoosted = true;
+    getAudioStart(); if (soundOn && window.playSound) window.playSound('whoosh');
+}
+// the big button: how many are left, lit while one is firing
+let lastBoostHud = '';
+function showBoosts() {
+    const r = player, key = mode !== 'race' ? '' : r.boosts + (r.boostT > 0 ? 'f' : '');
+    if (key === lastBoostHud) return; lastBoostHud = key;
+    const b = document.getElementById('race-boost'), n = document.getElementById('race-boost-n'); if (!b || !n) return;
+    n.textContent = r.boosts; b.classList.toggle('empty', r.boosts <= 0 && !(r.boostT > 0)); b.classList.toggle('firing', r.boostT > 0);
+    b.setAttribute('aria-label', `Overtake boost: ${r.boosts} left`);
+}
+// The glowing streak behind a boosting car: two crossed sheets of light, shared by every car (one picture, one shape),
+// stretched and flickered a little each frame. Made the first time anyone boosts.
+let trailGeo = null, trailMat = null;
+function trailOf(r) {
+    if (r.trail) return r.trail;
+    if (!trailGeo) {
+        trailGeo = new THREE.BufferGeometry();   // (from the car's tail, at x = 0, back to x = -1; one sheet lying flat, one standing up)
+        trailGeo.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, -0.5, 0, 0, 0.5, -1, 0, -0.5, -1, 0, 0.5, 0, -0.5, 0, 0, 0.5, 0, -1, -0.5, 0, -1, 0.5, 0], 3));
+        trailGeo.setAttribute('uv', new THREE.Float32BufferAttribute([1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 1, 1, 0, 0, 0, 1], 2)); trailGeo.setIndex([0, 1, 2, 1, 3, 2, 4, 5, 6, 5, 7, 6]);
+        trailGeo.userData.shared = true;
+        const tex = canvasTex(256, 64, (x, w, h) => {
+            x.clearRect(0, 0, w, h);
+            const along = x.createLinearGradient(0, 0, w, 0); along.addColorStop(0, 'rgba(0,140,255,0)'); along.addColorStop(0.45, 'rgba(0,200,255,.5)'); along.addColorStop(0.85, 'rgba(120,240,255,.95)'); along.addColorStop(1, 'rgba(255,255,255,1)');
+            x.fillStyle = along; x.fillRect(0, 0, w, h);
+            // (soft top and bottom edges, and a few brighter streaks through the middle)
+            x.globalCompositeOperation = 'destination-in'; const across = x.createLinearGradient(0, 0, 0, h); across.addColorStop(0, 'rgba(0,0,0,0)'); across.addColorStop(0.5, 'rgba(0,0,0,1)'); across.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = across; x.fillRect(0, 0, w, h);
+            x.globalCompositeOperation = 'lighter'; for (const [y, a] of [[22, 0.5], [32, 0.8], [41, 0.45]]) { const g = x.createLinearGradient(0, 0, w, 0); g.addColorStop(0, 'rgba(255,255,255,0)'); g.addColorStop(1, `rgba(255,236,170,${a})`); x.fillStyle = g; x.fillRect(0, y, w, 2.5); }
+            x.globalCompositeOperation = 'source-over';
+        });
+        trailMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    }
+    const m = new THREE.Mesh(trailGeo, trailMat); m.position.set(-r.design.L * 0.47, 0.45, 0); m.visible = false; m.frustumCulled = false; m.renderOrder = 3;
+    r.holder.add(m); r.trail = m; r.trailK = 0;
+    return m;
+}
+function showTrail(r, dt) {
+    if (!r.boostOn && !r.trail) return;
+    const m = trailOf(r); r.trailK = Math.max(0, Math.min(1, r.trailK + (r.boostOn ? dt * 7 : -dt * 3.5)));
+    m.visible = r.trailK > 0.02;
+    if (m.visible) m.scale.set((4 + Math.min(1, Math.abs(r.v) / 80) * 6) * r.trailK * (0.88 + Math.random() * 0.24), 0.55 + 0.35 * r.trailK, 1.7);
 }
 function driveRival(r, dt) {
     const go = race.phase === 'go' || race.phase === 'done';
     const P = r.perf;
+    // a rival's own overtake boost (Medium and Hard): a little more top speed and push for a few seconds, nothing else
+    const boosting = r.boostT > 0, vm = P.vmax * (boosting ? RIVAL_BOOST_TOP : 1); if (boosting) r.boostT -= dt; r.boostOn = boosting && go;
     // look ahead and slow down in time for the next corner
-    let target = P.vmax;
+    let target = vm;
     for (let ahead = 0, far = r.v * r.v / (2 * P.brake * 0.8) + 40; ahead <= far; ahead += 8) {
         const s = sampleAt(r.d + ahead), k = Math.abs(s.ks);
-        const vc = k > 1e-4 ? Math.sqrt(P.grip * 0.92 / k) : P.vmax;
+        const vc = k > 1e-4 ? Math.sqrt(P.grip * 0.92 / k) : vm;
         target = Math.min(target, Math.sqrt(vc * vc + 2 * P.brake * 0.8 * ahead));
     }
+    const straight = target >= P.vmax * 0.999;   // (nothing to brake for yet)
+    // Its pit stop (5-lap races): once, on the lap it planned, in one of the bays painted past your box. It brakes down
+    // the straight, eases over to the pit side (keeping a car's width clear of your box, in case you are in it), stops
+    // for a few seconds, and goes. If every bay is taken it tries again next lap.
+    const ps = r.ps; let pitLat = null, stopped = false;
+    if (ps && !ps.done && r.finished == null) {
+        if (!ps.state && r.lap === ps.plan - 1) {
+            const pos = ((r.d % trackLen) + trackLen) % trackLen;
+            if (pos > trackLen - 420 && pos < trackLen - 330) {
+                const taken = rivals.filter(o => o !== r && o.ps && o.ps.state).map(o => o.ps.bay), bay = [2, 1, 0].find(k => !taken.includes(k));   // (the furthest free bay, so nobody has to drive through a stopped car)
+                if (bay == null) { ps.plan++; if (ps.plan > raceLaps() - 2) ps.done = true; }   // (nobody pits on the last lap: with no bay free by then, it does without)
+                else { ps.state = 'in'; ps.bay = bay; ps.target = (Math.floor(r.d / trackLen) + 1) * trackLen + PIT.bays[bay]; }
+            }
+        }
+        if (ps.state === 'in') {
+            const dist = ps.target - r.d;
+            target = Math.min(target, Math.sqrt(Math.max(0, 2 * P.brake * 0.7 * (dist - 0.4))) + 0.6);
+            if (dist < 300) pitLat = dist > BAY_GAP + 1 ? PIT.lat - PIT.side * 2.8 : PIT.lat;
+            if (dist < 0.8) { ps.state = 'stop'; ps.until = race.raceTime + ps.hold; }
+        }
+        if (ps.state === 'stop') {
+            stopped = true; pitLat = PIT.lat;
+            if (race.raceTime >= ps.until) { ps.state = null; ps.done = true; ps.bay = -1; ps.out = race.raceTime + 1.6; r.boosts = RIVAL_BOOSTS[difficulty] || 0; freshen(r); stopped = false; }
+        }
+    }
+    if (ps && ps.done && race.raceTime < ps.out) pitLat = PIT.lat - PIT.side * 2.8;   // (pulling out: round any car in the bay ahead)
+    const pitting = pitLat != null;
     // On a street circuit there is no room to barge through: a rival slows for the car in front of it, and when it comes
     // up behind you it waits its turn, then goes round you on whichever side has room.
     let dodge = null;
-    if (TRACK.tightWalls) {
+    if (TRACK.tightWalls && !stopped) {
         for (const o of rivals) {
             if (o === r) continue;
             const gap = (((o.d - r.d) % trackLen) + trackLen) % trackLen;
@@ -593,16 +796,31 @@ function driveRival(r, dt) {
         }
     }
     let a = 0;
-    if (go) a = r.v < target ? P.a0 * Math.max(0.1, 1 - (r.v / P.vmax) ** 2) : -P.brake * Math.min(1, (r.v - target) / 3);
-    r.brakeLamp = go && r.v > target + 0.5 ? 1 : 0; holdLamp(r);   // (rivals' brake lights come on as they slow for a corner)
+    if (go) a = r.v < target ? P.a0 * (boosting ? RIVAL_BOOST_PUSH : 1) * Math.max(0.1, 1 - (r.v / vm) ** 2) : -P.brake * Math.min(1, (r.v - target) / 3);
+    r.brakeLamp = go && (stopped || r.v > target + 0.5) ? 1 : 0; holdLamp(r);   // (rivals' brake lights come on as they slow for a corner)
     a -= 0.25;
-    r.v = Math.max(0, r.v + a * dt);
+    r.v = stopped ? 0 : Math.max(0, r.v + a * dt);
     r.d += r.v * dt;
+    // when to boost: on a straight, at speed, with a car close ahead to catch (looked at once a second, and not every time)
+    if (go && r.boosts > 0 && !boosting && !pitting && straight && r.v > 45 && r.lap >= 0 && r.finished == null && race.raceTime > r.boostWait) {
+        r.boostWait = race.raceTime + 1;
+        const gapTo = d => (((d - r.d) % trackLen) + trackLen) % trackLen, near = g => g > 4 && g < 45;
+        if ((near(gapTo(samples[player.idx].d)) || rivals.some(o => o !== r && near(gapTo(o.d)))) && Math.random() < 0.3) { r.boosts--; r.boostT = BOOST_TIME; r.boostWait = race.raceTime + 14 + Math.random() * 16; }
+    }
+    // a car standing in the pits ahead (you in your box, or a rival in a bay or on its way in or out): go round it
+    if (PIT && !pitting && r.ps) {
+        let nearest = 110;
+        const see = (d, lat) => { const gap = (((d - r.d) % trackLen) + trackLen) % trackLen; if (gap > 0.5 && gap < nearest) { nearest = gap; dodge = lat; } };
+        if (race.pit && !race.ff) see(samples[player.idx].d, player.lastLat);
+        for (const o of rivals) if (o !== r && o.ps && (o.ps.state || race.raceTime < o.ps.out) && o.v < r.v - 6) see(o.d, o.lat);
+    }
     // follow the racing line like a real driver: the car can only move sideways gradually (faster when going faster),
     // easing in and out of each move, so it never darts across the road
     const hwR = sampleAt(r.d + r.v * 0.4).hw; let latTarget = Math.max(-hwR + 1.3, Math.min(hwR - 1.3, lineAt(r.d + r.v * 0.4) * 0.9 + r.lineOffset));
-    if (dodge != null) { let side = r.lat >= dodge ? 1 : -1; if (Math.abs(dodge + side * 2.9) > hwR - 1.2) side = -side; latTarget = Math.max(-hwR + 1.2, Math.min(hwR - 1.2, dodge + side * 2.9)); }
-    const maxLatV = Math.min(4.5, r.v * 0.09), wantV = Math.max(-maxLatV, Math.min(maxLatV, (latTarget - r.lat) * 1.2));
+    if (dodge != null && (TRACK.tightWalls || Math.abs(latTarget - dodge) < 2.9)) { let side = r.lat >= dodge ? 1 : -1; if (Math.abs(dodge + side * 2.9) > hwR - 1.2) side = -side; latTarget = Math.max(-hwR + 1.2, Math.min(hwR - 1.2, dodge + side * 2.9)); }
+    if (pitting) latTarget = pitLat;
+    // (a car coming into or out of its bay may move across a little more briskly than its speed would normally allow)
+    const maxLatV = stopped ? 0 : Math.max(pitting && r.v > 2 ? 2.2 : 0, Math.min(4.5, r.v * 0.09)), wantV = Math.max(-maxLatV, Math.min(maxLatV, (latTarget - r.lat) * 1.2));
     r.latV += Math.max(-5 * dt, Math.min(5 * dt, wantV - r.latV));
     r.lat += r.latV * dt;
     const here = pathAt(r.d, r.lat, 0), ahead = pathAt(r.d + 3, r.lat + r.latV * 3 / Math.max(4, r.v), 0);
@@ -634,7 +852,7 @@ function collisions() {
         const a = all[i], b = all[j], dx = b.x - a.x, dz = b.z - a.z, dist = Math.hypot(dx, dz), min = 2.6;
         if (dist < min && dist > 0.01 && Math.abs(a.y - b.y) < 2) {   // (not a car on a bridge above another)
             const push = (min - dist) / 2, nx = dx / dist, nz = dz / dist;
-            if (a.isPlayer) { a.x -= nx * push * 2; a.z -= nz * push * 2; a.v *= 0.97; if (Math.abs(a.v - b.v) > 4) { bump(0.2); jolt(a, 0.25); efx.sparksAt((a.x + b.x) / 2, a.y + 0.5, (a.z + b.z) / 2, -nx, -nz, 14); } crash(a, b, nx, nz, Math.abs(a.v - b.v)); }
+            if (a.isPlayer) { a.x -= nx * push * 2; a.z -= nz * push * 2; a.v *= 0.97; if (Math.abs(a.v - b.v) > 4) { bump(0.2); jolt(a, 0.25); efx.sparksAt((a.x + b.x) / 2, a.y + 0.5, (a.z + b.z) / 2, -nx, -nz, 14); if (race.phase === 'go' && !race.pit) race.crashed = true; } crash(a, b, nx, nz, Math.abs(a.v - b.v)); }   // (crashed: no "clean race" trophy; a rival nudging you while you stand in the pit box is not your crash)
             else if (b.isPlayer) { b.x += nx * push * 2; b.z += nz * push * 2; b.v *= 0.97; crash(a, b, nx, nz, Math.abs(a.v - b.v)); }
             else { a.v *= 0.995; if (dist < 2.1) crash(a, b, nx, nz, Math.min(5, Math.abs(a.v - b.v) * 0.5)); }   // (rivals only mark each other when really close, and never hard enough to lose a part)
         }
@@ -679,9 +897,9 @@ function updateCars(dt) {
     if (!(race && race.podium)) chooseDetail();
     for (const r of [player, ...rivals]) {
         const sy = samples[r.idx]; r.y = sy.p.y + sy.slope * ((r.x - sy.p.x) * sy.t.x + (r.z - sy.p.z) * sy.t.z);   // the road's height here
-        r.holder.position.set(r.x, r.y, r.z);
+        r.holder.position.set(r.x, r.y + (r.isPlayer && race && race.pit ? 0.09 : 0), r.z);   // (up on its jacks in the pit box)
         r.holder.rotation.y = r.heading;
-        brakeLights(r);
+        brakeLights(r); showTrail(r, dt);
         r.holder.rotation.z = sy.slope ? Math.atan(sy.slope * Math.cos(r.heading - sy.heading)) : 0;   // nose up on a climb, down on a descent
         if (!r.isPlayer && camera) {
             // rivals far up the road aren't drawn, and only those close by are drawn in full detail (with a margin, so a
@@ -714,20 +932,26 @@ function roadHeight(wx, wz, r) {
 //  LAPS, GHOST AND RESULTS
 // =====================================================================
 function onPlayerLap(lapTime) {
+    const r = player, REC = window.FFV.records;
+    // Does this lap count for the lap record (and so for the ghost)? Only a proper flying lap: from the line to the line
+    // (a race's first lap starts from the grid), with no boost and no pit stop in it. See records.js.
+    const counts = !r.lapBoosted && !r.lapPitted && (mode !== 'race' || r.lap >= 2), tape = race.recording;
+    race.recording = []; r.lapBoosted = r.boostT > 0; r.lapPitted = false;
     // lapTime is null when crossing the line for the first time, which starts lap 1
-    if (lapTime == null) { if (mode === 'trial') { race.recording = []; setupGhostFromStore(); } if (mode === 'quali') { setupGhostFromStore(); flash('Flying lap: go, go, go!', 1500); } return; }
+    if (lapTime == null) { if (mode !== 'race') setupGhostFromStore(); if (mode === 'quali') flash('Flying lap: go, go, go!', 1500); return; }
     race.lapTimes.push(lapTime);
-    if (mode === 'quali') { const key = 'raceBest_' + TRACK.id, best = store(key, null); if (best == null || lapTime < best) storeSet(key, lapTime); qualiDone(lapTime); return; }
-    const key = 'raceBest_' + TRACK.id, best = store(key, null);
-    let msg = `Lap ${fmtTime(lapTime)}`;
-    if (best == null || lapTime < best) { storeSet(key, lapTime); msg += ' · New best lap!'; window.playSound && window.playSound('win'); }
-    if (mode === 'trial') {
+    const before = REC.get(TRACK.id).lap, record = counts && REC.set(TRACK.id, 'lap', lapTime);
+    if (record) race.newLap = lapTime;
+    // The ghost is your best lap: this lap's own recording is kept whenever it is a new record (or quicker than the
+    // ghost there is), whether it was driven in a time trial, in qualifying or in a race.
+    if (counts && tape.length > 40) {
         const g = store('ghost_' + TRACK.id, null);
-        if (!g || lapTime < g.time) storeSet('ghost_' + TRACK.id, { time: lapTime, frames: race.recording, design: { ...player.design, logo: null } });
-        race.recording = [];
-        // replay the best ghost from the start of the next lap
-        setupGhostFromStore();
+        if (record || !g || !(g.time <= lapTime)) storeSet('ghost_' + TRACK.id, { time: lapTime, frames: tape, design: { ...r.design, logo: null } });
     }
+    if (mode === 'quali') { if (REC.set(TRACK.id, 'quali', lapTime)) quali.record = true; qualiDone(lapTime); return; }
+    let msg = `Lap ${fmtTime(lapTime)}`;
+    if (record) { msg += ' · New best lap!'; window.playSound && window.playSound('win'); if (mode === 'trial' && before) window.FFV.trophies.award('trial_record'); }
+    if (mode === 'trial') setupGhostFromStore();   // (the best lap's ghost sets off again with you)
     flash(msg);
 }
 function setupGhostFromStore() {
@@ -756,7 +980,8 @@ function updateGhost() {
 function classify() {
     const before = [player, ...rivals].map(progressOf);
     const keep = rivals.map(r => ({ x: r.x, z: r.z, heading: r.heading, v: r.v, steer: r.steer, d: r.d, idx: r.idx, lap: r.lap, lapStart: r.lapStart, finished: r.finished,
-        best: r.best, half: r.half, lat: r.lat, latV: r.latV, lineStart: r.lineStart, nLaps: r.laps.length }));
+        best: r.best, half: r.half, lat: r.lat, latV: r.latV, lineStart: r.lineStart, nLaps: r.laps.length,
+        boosts: r.boosts, boostT: r.boostT, boostOn: r.boostOn, boostWait: r.boostWait, ps: r.ps ? { ...r.ps } : null }));   // (and where each has got to with its boosts and its pit stop)
     const t0 = race.raceTime, clock = performance.now(); race.ff = true;
     for (let i = 0; i < 40000; i++) {                           // (at most 400 more seconds of racing)
         let racing = false; for (const r of rivals) if (r.finished == null) { racing = true; break; }
@@ -777,6 +1002,7 @@ const badge = row => window.FFV.badge ? window.FFV.badge(TEAMS[row.teamIdx].id) 
 const PODIUM_BTN = '<button class="act-btn ghost pod-only" data-race="podium">🏁 Podium</button>';
 function finishRace() {
     race.phase = 'done'; race.tapeEnd = race.raceTime + 3;     // keep filming for a few seconds after the line
+    player.boostT = 0; lastPitHint = null; { const h = document.getElementById('race-pit-hint'); if (h) h.hidden = true; }
     race.podiumAt = race.t + 3;                                // ... and then the top three go up on the podium
     clearTimeout(flashTimer); document.getElementById('race-flash').classList.remove('show');
     race.results = classify();
@@ -785,6 +1011,15 @@ function finishRace() {
     const medals = store('medals', {}), key = TRACK.id + '_' + difficulty, prev = medals[key];
     if (pos <= 3 && (!prev || pos < prev)) { medals[key] = pos; storeSet('medals', medals); }
     { const mine = window.FFV.myStats; mine.add('races'); if (pos === 1) mine.add('wins'); if (pos <= 3) mine.add('podiums'); }   // (what you have done in this game: shown on your Driver Card)
+    // the records board: your race time over this many laps, and any lap record set on the way
+    const REC = window.FFV.records, kind = REC.raceKind(raceLaps()), total = race.results[pos - 1].total;
+    const records = [kind && total != null && REC.set(TRACK.id, kind, total) ? `New record! Race time ${fmtTime(total)}` : '', race.newLap != null ? `New record! Best lap ${fmtTime(race.newLap)}` : ''].filter(Boolean);
+    // trophies (each is only ever given once: see trophies.js)
+    { const TR = window.FFV.trophies; TR.award('first_race');
+      if (!race.crashed) TR.award('clean');
+      if (timeOfDay === 'night') TR.award('night');
+      if (weatherKind === 'rain') TR.award('rain');
+      if (pos === 1) { TR.award('first_win'); TR.award('win_' + TRACK.id); if (race.startSlot === fieldSize) TR.award('last_first'); if (player.boostsUsed >= BOOSTS) TR.award('boost_win'); if (difficulty === 'hard') TR.award('hard_win'); } }
     if (window.playSound) { window.playSound(pos === 1 ? 'win' : pos > 3 ? 'lose' : 'go'); window.playSound(pos <= 3 ? 'bigcheer' : 'cheer'); }   // the crowd cheers every finisher, loudest for the top three
     // a championship race: the season is told the finishing order straight away, so nothing is lost if the app is closed now
     const C = champ;
@@ -794,7 +1029,8 @@ function finishRace() {
     const kicker = C ? `Round ${C.round} of ${C.of} · ${TRACK.name} · ${laps}` : `${TRACK.name} · ${laps} · ${difficulty}`, title = pos === 1 ? 'You win!' : `You finished ${ordinal(pos)}`;
     const actions = C ? '<button class="big-btn" data-race="next">🏆 Standings</button><button class="act-btn" data-race="replay">🎬 Watch replay</button>'
         : '<button class="big-btn" data-race="again">Race again</button><button class="act-btn" data-race="replay">🎬 Watch replay</button><button class="act-btn ghost" data-race="menu">Menu</button>';
-    const extra = (medal ? `<p class="rr-medal">${medal}</p>` : '') + (C ? `<p class="rr-points">${gained ? `+${gained} point${gained === 1 ? '' : 's'}` : 'No points this time'}</p>` : '');
+    const extra = (medal ? `<p class="rr-medal">${medal}</p>` : '') + (C ? `<p class="rr-points">${gained ? `+${gained} point${gained === 1 ? '' : 's'}` : 'No points this time'}</p>` : '')
+        + records.map(t => `<p class="rr-record">⭐ ${t}</p>`).join('');
     race.sheet = { kicker, title, extra, actions, more: '📋 Results' };
     const rows = race.results.map((row, i) => `<tr class="${row.k === 0 ? 'me' : ''}"><td>${i + 1}</td><td>${badge(row)}${escapeHtml(row.name)}${row.k === 0 ? YOU_TAG : ''} <small>${escapeHtml(row.team)}</small></td><td>${fmtTime(row.total)}</td><td>${fmtTime(row.best)}</td>${C && C.points ? `<td class="pts">${C.points[i] ? '+' + C.points[i] : ''}</td>` : ''}</tr>`).join('');
     el.innerHTML = `<div class="rr-box champ-box"><span class="kicker">${kicker}</span><h2>${title}</h2>${race.sheet.extra}
@@ -831,7 +1067,7 @@ function podiumScene() {
     const P = race.podium, at = pathAt(PODIUM_D, 0, 0), c = Math.cos(at.heading), sn = Math.sin(at.heading);
     podium.group.position.set(at.x, at.y, at.z); podium.group.rotation.y = at.heading; podium.group.visible = true;
     P.x = at.x; P.y = at.y; P.z = at.z; P.heading = at.heading;
-    for (const r of [player, ...rivals]) { r.holder.visible = false; r.v = 0; showDetail(r, true); }
+    for (const r of [player, ...rivals]) { r.holder.visible = false; r.v = 0; showDetail(r, true); r.boostOn = false; if (r.trail) { r.trail.visible = false; r.trailK = 0; } }
     P.top.forEach((row, i) => {
         const r = row.c, [, z, h, turn] = STEPS[i];
         r.x = at.x + z * sn; r.z = at.z + z * c; r.heading = at.heading + turn; r.v = 0; r.steer = turn ? Math.sign(turn) * 0.3 : 0.22;
@@ -994,6 +1230,7 @@ function replayPose(t) {
         c.heading = a[2] + wrapAngle(b[2] - a[2]) * u;
         c.steer = a[3] + (b[3] - a[3]) * u; c.v = a[4] + (b[4] - a[4]) * u;
         c.brakeLamp = (u < 0.5 ? a : b)[6] || 0;   // (the brake light, exactly as it was)
+        c.boostOn = !!(u < 0.5 ? a : b)[7];        // (and its boost streak)
         // which part of the lap the car is on (for the road's height under it): the tape says (so a car on a bridge is
         // never mistaken for one on the road beneath it); an old tape without it: near where it was, or anywhere after a jump
         if (a[5] != null) { c.idx = (u < 0.5 ? a : b)[5] % N; return; }
@@ -1004,7 +1241,7 @@ function replayPose(t) {
 // bring back the bumps that had happened by replay time t (the tape starts a tenth of a second into the race)
 function replayHits(t, pieces) {
     const R = race.replay, all = [player, ...rivals];
-    while (R.hit < race.hits.length && race.hits[R.hit].t <= race.tapeTimes[0] + t) { const ev = race.hits[R.hit++]; if (all[ev.k]) dmg.apply(all[ev.k], ev, pieces); }
+    while (R.hit < race.hits.length && race.hits[R.hit].t <= race.tapeTimes[0] + t) { const ev = race.hits[R.hit++]; if (!all[ev.k]) continue; if (ev.fresh) dmg.reset(all[ev.k]); else dmg.apply(all[ev.k], ev, pieces); }   // (fresh: cleaned up at a pit stop)
 }
 function replayFrame(dt) {
     const R = race.replay, len = race.tapeTimes[race.tapeTimes.length - 1] - race.tapeTimes[0];
@@ -1101,7 +1338,7 @@ function placeCamera(snap = false, dt = 0.016) {
     camera.position.copy(camPos);
     if (efx) { const [sx, sy] = efx.shakeOffset(r.v / r.perf.vmax, elapsed); camera.position.x += sx; camera.position.y += sy; }
     camera.lookAt(camLook);
-    camera.fov = 60 + Math.min(14, Math.max(0, r.v - 30) * 0.25) + (r.slip ? 3 : 0); camera.updateProjectionMatrix();
+    camera.fov = 60 + Math.min(14, Math.max(0, r.v - 30) * 0.25) + (r.slip ? 3 : 0) + (r.boostOn ? 4 : 0); camera.updateProjectionMatrix();   // (the view opens out a little in a slipstream or a boost)
 }
 // The minimap: the circuit's outline is drawn once and kept; each frame it is copied and the cars' dots go on top.
 // North is up, as on a real map.
@@ -1127,6 +1364,7 @@ function drawMap() {
     const c = mapCtx.canvas, x = mapCtx;
     x.clearRect(0, 0, c.width, c.height); x.drawImage(mapBase, 0, 0);
     const dot = (r, col, size) => { x.fillStyle = col; x.beginPath(); x.arc(r.x * mapScale + mapOff[0], r.z * mapScale + mapOff[1], size, 0, Math.PI * 2); x.fill(); };
+    if (pitMarks && pitMarks.visible) { const p = pathAt(PIT.d, PIT.side * 70, 0); x.fillStyle = '#0b0c0f'; x.fillRect(p.x * mapScale + mapOff[0] - 5, p.z * mapScale + mapOff[1] - 5, 10, 10); x.fillStyle = '#FFC400'; x.fillRect(p.x * mapScale + mapOff[0] - 3.5, p.z * mapScale + mapOff[1] - 3.5, 7, 7); }   // (the pit box: a yellow square beside the start line)
     rivals.forEach(r => { dot(r, '#0b0c0f', 5); dot(r, r.design.paint, 3.8); });
     if (ghost && ghost.holder.visible) dot({ x: ghost.holder.position.x, z: ghost.holder.position.z }, 'rgba(0,229,255,.8)', 5);
     dot(player, '#fff', 7.5); dot(player, '#E10600', 5.5);
@@ -1430,7 +1668,7 @@ function updateEffects(dt) {
     }
     if (weather) weather.update(dt, camera.position, r.v * fwdX, r.v * fwdZ);
     efx.update(dt); dmg.update(dt);
-    efx.drawSpeedLines(r.v / r.perf.vmax, r.slip, dt);
+    efx.drawSpeedLines(r.v / r.perf.vmax, r.slip || r.boostOn, dt);
     efx.lensDrops(dt, weatherKind === 'rain' && camMode < 2);
     if (headlight && headlight.visible) {
         headlight.position.set(r.x + fwdX * 1.8, r.y + 1.0, r.z + fwdZ * 1.8);
@@ -1487,18 +1725,20 @@ function frame(now) {
     // the replay tape: every car, ten times a second, from the start until a few seconds after you finish
     if (mode === 'race' && (race.phase === 'go' || race.phase === 'done') && (race.tapeEnd == null || race.raceTime < race.tapeEnd)) {
         race.tapeT = (race.tapeT || 0) + dt;
-        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v, c.idx, takeLamp(c)])); race.tapeTimes.push(race.raceTime); }   // (with the exact moment of each sample: frames don't land exactly on the tenths, and playing them back as if they did made the cars judder; the place on the lap, so a car on a bridge stays on it; and the brake light)
+        if (race.tapeT >= 0.1) { race.tapeT -= 0.1; race.tape.push([player, ...rivals].map(c => [c.x, c.z, c.heading, c.steer, c.v, c.idx, takeLamp(c), c.boostOn ? 1 : 0])); race.tapeTimes.push(race.raceTime); }   // (with the exact moment of each sample: frames don't land exactly on the tenths, and playing them back as if they did made the cars judder; the place on the lap, so a car on a bridge stays on it; and the brake light)
     }
-    if (mode === 'trial' && race.phase === 'go') {
+    // every lap you drive is recorded (twenty times a second), in case it turns out to be your best: then it is your ghost
+    if (race.phase === 'go' && player.lap >= 0) {
         race.recT = (race.recT || 0) + dt;
-        while (race.recT >= 0.05) { race.recording.push(player.y ? [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3), +player.y.toFixed(2)] : [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3)]); race.recT -= 0.05; }
-        updateGhost();
+        while (race.recT >= 0.05) { if (race.recording.length < 9000) race.recording.push(player.y ? [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3), +player.y.toFixed(2)] : [+player.x.toFixed(2), +player.z.toFixed(2), +player.heading.toFixed(3)]); race.recT -= 0.05; }
     }
+    if (mode === 'trial' && race.phase === 'go') updateGhost();
+    if (race.pit) pitFrame();
     if (mode === 'quali') { if (race.phase !== 'go') return; updateGhost(); }   // (your flying lap has just ended: the grid's table is up)
     updateCars(dt); placeCamera(false, dt); updateEngine();
     followSun(); tunnelLight(dt); world.update(dt); watchFrameRate(dt);
     updateEffects(dt);
-    hud(); drawMap(); cornerNames();
+    hud(); showBoosts(); pitHint(); drawMap(); cornerNames();
     drawFrame();
     if (window.__bench) window.__bench.work.push(performance.now() - t0);   // (testing: how long this frame's work took)
 }
@@ -1508,11 +1748,38 @@ function frame(now) {
 // =====================================================================
 // When the tablet goes to another app or the screen turns off, the race pauses and every sound stops (otherwise the
 // engine would carry on droning in the background)
-document.addEventListener('visibilitychange', () => {
+function onHidden() {
     if (!document.hidden || !race) return;
     Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; });
     if (race.phase !== 'done' && race.phase !== 'qintro' && race.phase !== 'qdone' && !race.paused) togglePause(); else stopEngine();
-});
+}
+const KEYS = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', Space: 'brake' };
+const WHEEL_KEYS = { Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3 };   // (the pit stop's four wheels)
+function onKeyDown(e) {
+    if (!isRacing()) return;
+    if (race && race.grid && !e.repeat && e.code !== 'Escape' && e.code !== 'KeyC') skipGridCam();
+    if (race && race.pit && e.code in WHEEL_KEYS) { if (!e.repeat) pitTap(WHEEL_KEYS[e.code]); e.preventDefault(); return; }
+    if (KEYS[e.code]) { input[KEYS[e.code]] = true; e.preventDefault(); getAudioStart(); }
+    if (e.code === 'KeyB' && !e.repeat) useBoost();          // (B for boost: Space is already the brake)
+    if (e.code === 'KeyC') nextCamera(); if (e.code === 'Escape') togglePause(true);
+}
+// The buttons on the racing screen are part of the page for good, so their listeners are added once (bindControls).
+// The listeners on the window and the document only matter while the racing screen is up: they are added as a race
+// starts and all taken away together on leaving it (one AbortController), so nothing of a race is left behind.
+let live = null;
+function listen() {
+    if (live) return;
+    live = new AbortController(); const o = { signal: live.signal };
+    document.addEventListener('visibilitychange', onHidden, o);
+    window.addEventListener('keydown', onKeyDown, o);
+    window.addEventListener('keyup', e => { if (KEYS[e.code]) input[KEYS[e.code]] = false; }, o);
+    window.addEventListener('blur', () => { Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; }); }, o);
+}
+function unlisten() {
+    if (live) { live.abort(); live = null; }
+    if (tiltOn) { window.removeEventListener('deviceorientation', tiltHandler); tiltOn = false; const b = document.getElementById('race-tilt'); if (b) b.classList.remove('active'); }
+    Object.keys(input).forEach(k => { input[k] = k === 'tilt' ? 0 : false; });
+}
 function bindControls() {
     document.querySelectorAll('[data-pad]').forEach(btn => {
         const key = btn.dataset.pad;
@@ -1521,15 +1788,14 @@ function bindControls() {
         btn.addEventListener('pointerdown', on); btn.addEventListener('pointerup', off); btn.addEventListener('pointercancel', off); btn.addEventListener('lostpointercapture', off);
         btn.addEventListener('contextmenu', e => e.preventDefault());
     });
-    const keys = { ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ArrowUp: 'gas', KeyW: 'gas', ArrowDown: 'brake', KeyS: 'brake', Space: 'brake' };
-    window.addEventListener('keydown', e => { if (!isRacing()) return; if (race && race.grid && !e.repeat && e.code !== 'Escape' && e.code !== 'KeyC') skipGridCam(); if (keys[e.code]) { input[keys[e.code]] = true; e.preventDefault(); getAudioStart(); } if (e.code === 'KeyC') nextCamera(); if (e.code === 'Escape') togglePause(true); });
-    window.addEventListener('keyup', e => { if (keys[e.code]) input[keys[e.code]] = false; });
+    // the overtake boost: it fires the moment the thumb lands
+    const boost = document.getElementById('race-boost');
+    if (boost) { boost.addEventListener('pointerdown', e => { e.preventDefault(); useBoost(); }); boost.addEventListener('contextmenu', e => e.preventDefault()); }
     // a tap anywhere on the picture skips the grid flyover (the buttons along the top still do their own jobs)
     document.getElementById('race-stage').addEventListener('pointerdown', e => { if (race && race.grid && !e.target.closest('.race-top, .race-panel')) skipGridCam(); });
-    window.addEventListener('blur', () => { Object.keys(input).forEach(k => { if (k !== 'tilt') input[k] = false; }); });
 }
-function getAudioStart() { if (!engine && race && !race.paused && !race.replay && !race.podium) startEngine(); }   // (not while paused or watching a replay)
 let tiltOn = false;
+function getAudioStart() { if (!engine && race && !race.paused && !race.replay && !race.podium) startEngine(); }   // (not while paused or watching a replay)
 function tiltHandler(e) { if (e.gamma == null) return; const landscape = Math.abs(window.orientation || 0) === 90 || innerWidth > innerHeight; const raw = landscape ? e.beta * (window.orientation === -90 ? -1 : 1) : e.gamma; input.tilt = -Math.max(-1, Math.min(1, raw / 25)); }
 async function toggleTilt() {
     if (!tiltOn) {
@@ -1567,14 +1833,15 @@ function showStage() {
     const skip = document.getElementById('race-qskip'); if (skip) { skip.hidden = mode !== 'quali'; skip.textContent = 'Skip qualifying'; }
     const keep = document.querySelector('#race-pause-panel [data-race="resume"]'); if (keep) keep.textContent = mode === 'quali' ? 'Keep driving' : 'Keep racing';
     const st = document.getElementById('race-stage'); st.classList.toggle('quali-on', mode === 'quali'); lastTower = '';
-    document.body.classList.add('racing');
+    document.body.classList.add('racing'); listen();
     resize(); setupRace(); startEngine();
 }
 // back to the menus (app.js shows them)
 function showMenu() {
     const finished = !!(race && race.phase === 'done');   // (leaving after the finish, or giving up part-way)
     if (window.stopLongSounds) window.stopLongSounds();
-    stopEngine(); leavePodium(); endGridCam(true); race = null; quali = null;
+    stopEngine(); leavePodium(); endGridCam(true); if (race && race.pit) for (const w of race.pit.wheels) if (w) w.visible = true;
+    race = null; quali = null; closePit(); unlisten(); { const h = document.getElementById('race-pit-hint'); if (h) h.hidden = true; }
     document.getElementById('race-stage').hidden = true;
     document.body.classList.remove('racing');
     if (raf) { cancelAnimationFrame(raf); raf = null; }
@@ -1597,6 +1864,7 @@ function loadCircuit(c) {
     if (world) { scene.remove(world.group); world.group.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { for (const k of ['map', 'alphaMap', 'normalMap', 'roughnessMap', 'emissiveMap']) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); }); }); }   // (every picture: the photo ones are copies made for this circuit, and going back to a circuit builds it afresh)
     tunnelNow = 0; TRACK = c; T = buildTrackData(c); samples = T.samples; N = T.N; trackLen = T.trackLen; tvCams = null;
     world = buildTrack(scene);
+    PIT = pitLayout(T, c); pitMarks = buildPitMarks(T, PIT); pitMarks.visible = false; world.group.add(pitMarks);   // (the painted pit box: shown in races that have pit stops)
     setAtmosphere(c.theme);
     drawMapBase();
 }
@@ -1816,6 +2084,11 @@ function mapFrame() {
 }
 export function testGridCam(t) { if (!race || !race.grid) return false; if (t == null && race.grid.hold != null) race.grid.t = race.grid.hold; race.grid.hold = t; return true; }   // testing only: hold the grid flyover at a moment (null lets it run on from there)
 export function sceneForTest() { return scene; }   // testing only
+export function pitForTest() { return { open: pitsOpen(), PIT, shown: !!(pitMarks && pitMarks.visible), pit: race && race.pit && { taps: race.pit.taps, time: race.pit.time }, stops: player && player.pitStops, boosts: player && player.boosts, boostT: player && +player.boostT.toFixed(2), used: player && player.boostsUsed, crashed: race && race.crashed,
+    rivals: rivals.map(r => r.ps && [r.ps.plan, r.ps.state || (r.ps.done ? 'done' : '-'), r.ps.bay, r.boosts, r.boostOn ? 1 : 0]) }; }   // testing only
+export function pitTapForTest(i) { pitTap(i); }   // testing only
+export function rivalsBoostForTest() { return rivals.map(r => !!r.boostOn); }   // testing only
+export function rivalBoostNow(k = 0) { const r = rivals[k]; if (r) { r.boostT = BOOST_TIME; } return !!r; }   // testing only: make rival k fire a boost
 export function trackForTest() { return T; }   // testing only
 export function testTime(t) { if (!SC.TIMES[t]) return false; timeOfDay = t; if (world && TRACK) setAtmosphere(TRACK.theme); return true; }   // testing only: 'day', 'sunset' or 'night'
 export function rivalsForTest() { return rivals.map(r => [Math.round(((r.d % trackLen) + trackLen) % trackLen), Math.round(r.v * 3.6), +r.y.toFixed(1)]); }   // testing only: where each rival is, its speed (km/h) and height

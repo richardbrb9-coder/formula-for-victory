@@ -26,6 +26,8 @@ export const LASVEGAS = {
     heliHeight: 50,             // (the helicopter camera in replays flies above the buildings along the road)
     // between the road and the wall: a metre of asphalt, concrete blocks and a catch fence
     runoff: { w: 1.0, surface: 'asphalt', barrier: 'concrete', fence: true },
+    // the pit box painted on the road for 5-lap races (see pitstop.js): on the pit wall's side (1 = the driver's left, -1 = the right), its middle this many metres past the start line
+    pit: { side: 1, at: 56 },
     zones: [
         // the start straight: the pit wall on the left
         { from: 5990, to: 180, side: 'L', w: 1.2, fence: false },

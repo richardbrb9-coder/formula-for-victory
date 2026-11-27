@@ -22,6 +22,8 @@ export const MONACO = {
     heliHeight: 62,             // (the helicopter camera in replays flies above the rooftops)
     // between the road and the wall: nothing but a strip of pavement under a metre wide, a steel barrier and a catch fence
     runoff: { w: 0.9, surface: 'asphalt', barrier: 'steel', fence: true },
+    // the pit box painted on the road for 5-lap races (see pitstop.js): on the pit wall's side (1 = the driver's left, -1 = the right), its middle this many metres past the start line
+    pit: { side: -1, at: 56 },
     zones: [
         // the start straight: the pit wall on the right
         { from: 3050, to: 150, side: 'R', w: 1.1, barrier: 'concrete' },

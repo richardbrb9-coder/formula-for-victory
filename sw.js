@@ -1,4 +1,4 @@
-const CACHE_NAME = 'formula-for-victory-v17'; // Bump this on every change so tablets pick up the new version
+const CACHE_NAME = 'formula-for-victory-v18'; // Bump this on every change so tablets pick up the new version
 const CACHE_PREFIX = 'formula-for-victory-'; // Only this app's own caches are ever deleted: every app on richardbrb9-coder.github.io shares the same cache storage
 
 // Everything is stored inside the app (no CDNs), and all addresses are relative so it works in a GitHub Pages subfolder.
@@ -11,6 +11,9 @@ const CORE_FILES = [
     './myteams.js',
     './sound.js',
     './season.js',
+    './records.js',
+    './trophies.js',
+    './pitstop.js',
     './championship.js',
     './cards.js',
     './cardart.js',
@@ -156,9 +159,22 @@ function cacheFirst(request) {
     return fromCache(request).then((cached) => cached || fetch(request).then((response) => saveCopy(request, response)).catch(() => Response.error()));
 }
 
+// Pictures and sounds are saved one by one when the app is installed, and a patchy connection can leave one out (the
+// road's bumpy-surface picture was once missing offline). So each time the app is opened, any that are missing are
+// fetched again: the saved set mends itself the next time there is a connection.
+let toppedUp = 0;
+function topUp() {
+    if (Date.now() - toppedUp < 60000) return Promise.resolve();   // (at most once a minute)
+    toppedUp = Date.now();
+    return ownCache().then((cache) => Promise.all(EXTRA_FILES.map((url) => cache.match(url, { ignoreSearch: true })
+        .then((hit) => hit || cache.add(new Request(url, { cache: 'reload' })).catch(() => { /* still no connection: next time */ })))))
+        .catch(() => { /* storage unavailable */ });
+}
+
 self.addEventListener('fetch', (event) => {
     if (!event.request.url.startsWith('http') || event.request.method !== 'GET') return;
     const url = new URL(event.request.url);
+    if (event.request.mode === 'navigate' && url.origin === self.location.origin) event.waitUntil(topUp());
     const checkOnline = url.origin === self.location.origin &&
         (event.request.mode === 'navigate' || NETWORK_FIRST.some((name) => url.pathname.endsWith('/' + name)));
     event.respondWith(checkOnline ? networkFirst(event.request) : cacheFirst(event.request));

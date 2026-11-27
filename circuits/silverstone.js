@@ -17,6 +17,8 @@ export const SILVERSTONE = {
     // between the road and the wall: grass 8 m wide with a steel barrier, unless a zone below says otherwise.
     // Silverstone is famous for its huge asphalt run-off areas on the outside of the fast corners.
     runoff: { w: 8, surface: 'grass', barrier: 'steel' },
+    // the pit box painted on the road for 5-lap races (see pitstop.js): on the pit wall's side (1 = the driver's left, -1 = the right), its middle this many metres past the start line
+    pit: { side: -1, at: 56 },
     zones: [
         // the Hamilton Straight: the pit wall on the right, a grandstand behind a fence on the left
         { from: 5740, to: 250, side: 'R', w: 4.5, barrier: 'concrete', fence: true },

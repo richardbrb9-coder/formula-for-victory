@@ -29,6 +29,8 @@ export const SUZUKA = {
     roadFar: 1100,              // (a section of road more than 1100 m away is deep in the haze: it is not drawn. See track.js)
     // between the road and the wall: grass 9 m wide with a steel barrier, unless a zone below says otherwise
     runoff: { w: 9, surface: 'grass', barrier: 'steel' },
+    // the pit box painted on the road for 5-lap races (see pitstop.js): on the pit wall's side (1 = the driver's left, -1 = the right), its middle this many metres past the start line
+    pit: { side: -1, at: 56 },
     zones: [
         // the main straight: the pit wall on the right, the big grandstand behind a fence on the left
         { from: 5450, to: 430, side: 'R', w: 3, barrier: 'concrete', fence: true },
