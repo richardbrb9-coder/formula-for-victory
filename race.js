@@ -16,6 +16,7 @@ import { Post } from './post.js';
 import { createCar, carStats } from './carmodel.js';
 import { teamDesign } from './teamdesign.js';
 import { pitLayout, buildPitMarks, PitPanel, BAY_GAP } from './pitstop.js';
+import { buildFlag, winFlag } from './flag.js';
 
 // =====================================================================
 //  THE TRACK (built by track.js from the circuit's data; everything else is placed along it)
@@ -189,6 +190,7 @@ const BOOSTS = 3, BOOST_TIME = 3, BOOST_TOP = 1.07, BOOST_PUSH = 1.45, RIVAL_BOO
 // PIT STOPS (5-lap races only, and never forced): see pitstop.js for the painted box and the wheel-changing game.
 // PIT: where this circuit's box and bays are; PIT_SPEED: the quickest you can be going for the crew to catch the car.
 let PIT = null, pitMarks = null, pitPanel = null;
+let flagPost = null;                              // the marshal with the chequered flag by the finish line (see flag.js, and THE CHEQUERED FLAG below)
 const PIT_SPEED = 21, PIT_SHOW = 0.5;             // metres a second (about 47 mph); seconds the four green ticks stay on screen before you are let go (your time then
                                                   // stays up as you drive away: standing still to read it cost a second and a half the rivals never lose)
 const pitsOpen = () => mode === 'race' && (raceLaps() >= 5 || !!window.__pits);   // (__pits: testing only, pit stops in a shorter race)
@@ -197,7 +199,7 @@ const input = { left: false, right: false, gas: false, brake: false, tilt: 0 };
 const CAM_NAMES = ['Chase camera', 'Close chase camera', 'Bonnet camera', 'Cockpit view'];
 let camMode = [0, 1, 2, 3].includes(store('raceCam', 0)) ? store('raceCam', 0) : 0, help = store('raceHelp', true);
 function nextCamera() {
-    if (race && (race.replay || race.podium)) return;
+    if (race && (race.replay || race.podium || race.cut)) return;
     if (race && race.grid) { const m = (race.grid.saveCam + 1) % 4; race.grid.saveCam = m; storeSet('raceCam', m); endGridCam(); flash(CAM_NAMES[m], 1100); return; }   // (during the grid flyover: straight to the new view)
     camMode = (camMode + 1) % 4; storeSet('raceCam', camMode); applyCameraView(); flash(CAM_NAMES[camMode], 1100);
 }
@@ -270,7 +272,7 @@ function drawFrame() {
     if (usePost && post) {
         const glow = (timeOfDay === 'night' ? 0.85 : timeOfDay === 'sunset' ? 0.65 : 0.45) * (quality === 'high' ? 1 : 0.8);
         // (no motion blur from the driver's seat: the dashboard and the drops on the glass stay sharp)
-        post.finish(player && camMode !== 3 && !(race && race.replay) ? Math.abs(player.v) / player.perf.vmax : 0, glow, { grade: look && look.grade, sat: look && look.sat, ...(camMode === 3 ? { camera } : { camera, sun: sunOnScreen(), focus: race && race.replay && player ? camera.position.distanceTo(player.holder.position) : 0 }) });   // (not from the cockpit: its second pass replaces the depth picture)
+        post.finish(player && camMode !== 3 && !(race && (race.replay || race.cut)) ? Math.abs(player.v) / player.perf.vmax : 0, glow, { grade: look && look.grade, sat: look && look.sat, ...(camMode === 3 ? { camera } : { camera, sun: sunOnScreen(), focus: race && race.replay && player ? camera.position.distanceTo(player.holder.position) : 0 }) });   // (not from the cockpit: its second pass replaces the depth picture)
     }
 }
 function drawScenes() {
@@ -303,7 +305,7 @@ function storeSet(key, v) { try { localStorage.setItem('ffv_' + key, JSON.string
 
 function setupRace() {
     // remove old cars
-    leavePodium(); endGridCam(true);
+    leavePodium(); endGridCam(true); endCut(false);
     if (ghost) ghost.model.group.traverse(o => { if (o.isMesh && o.material && o.material.userData.ghostCopy) o.material.dispose(); });   // (the see-through copies)
     [player, ...rivals, ghost].forEach(r => { if (r) { scene.remove(r.holder); dmg.unfit(r); r.model.dispose(); dropBlob(r.blob); if (r.glow) r.glow.material.dispose(); if (r.far) { r.far.geometry.dispose(); r.far.material.dispose(); } if (r.cockpit) { if (r.cockpit.group.parent) r.cockpit.group.parent.remove(r.cockpit.group); r.cockpit.dispose(); } } });
     rivals = []; ghost = null; pixelCache.clear(); mapColours.clear();   // (each race's cars have their own pictures)
@@ -350,7 +352,7 @@ function setupRace() {
     for (const r of [player, ...rivals]) dmg.fit(r);
     try { for (const o of dmg.warmUp(player)) { const was = o.visible; o.visible = true; renderer.compile(o, camera, scene); o.visible = was; } } catch (e) { /* made ready at the first bump instead */ }
     race = { phase: 'lights', t: 0, lightsT: 0, raceTime: 0, results: null, recording: [], lapTimes: [], tape: [], tapeTimes: [], hits: [],
-        startSlot, pit: null, crashed: false, newLap: null };   // (startSlot: your grid box, 0 = pole; pit: a pit stop in progress; crashed: you have hit something; newLap: a lap record set in this race)
+        startSlot, pit: null, crashed: false, newLap: null, flagFrom: null, flagFor: [], cut: null };   // (startSlot: your grid box, 0 = pole; pit: a pit stop in progress; crashed: you have hit something; newLap: a lap record set in this race; flagFrom: when the chequered flag came out; flagFor: when each car took it; cut: the winner's trackside shot)
     // boosts and pit stops: everyone starts with a full set of boosts; in a 5-lap race each rival plans one stop, on
     // its second, third or fourth lap, shared out so that they don't all come in together
     const pits = pitsOpen(), span = Math.max(1, raceLaps() - 2), turn = rivals.map((_, i) => i).sort(() => Math.random() - 0.5);
@@ -358,6 +360,7 @@ function setupRace() {
     rivals.forEach((r, i) => Object.assign(r, { boosts: RIVAL_BOOSTS[difficulty] || 0, boostT: 0, boostOn: false, boostWait: 8 + Math.random() * 14,
         ps: pits ? { plan: 1 + turn[i] % span, hold: 2.6 + Math.random() * 1.8, state: null, bay: -1, target: 0, until: 0, out: 0, done: false } : null }));
     if (pitMarks) pitMarks.visible = pits;
+    if (flagPost) { flagPost.group.visible = mode !== 'trial'; flagPost.night(timeOfDay === 'night'); }   // (a time trial has no chequered flag)
     closePit(); lastBoostHud = ''; lastPitHint = null;
     { const st = document.getElementById('race-stage'); st.classList.toggle('boost-on', mode === 'race'); st.classList.remove('pitting'); }
     updateCars(0); placeCamera(true);
@@ -483,6 +486,9 @@ function lapCrossing(r, prevIdx) {
             if (timed != null && (r.best == null || timed < r.best)) r.best = timed;
             if (r.isPlayer) onPlayerLap(timed);
             r.lapStart = now;
+            // the chequered flag comes out as the leader starts the last lap, and every car that finishes is given it
+            // (not while the rivals' finishing times are being worked out in a hurry: see classify)
+            if (mode === 'race' && !race.ff && r.lap >= raceLaps() - 1) { if (race.flagFrom == null) race.flagFrom = now; if (r.lap >= raceLaps()) race.flagFor.push(now); }
             if (mode === 'race' && r.lap >= raceLaps() && r.finished == null) { r.finished = now; if (r.isPlayer) finishRace(); }
         }
     }
@@ -525,6 +531,12 @@ function drivePlayer(dt) {
         if (!auto) { gas = true; brake = false; }
     }
     const s = samples[r.idx], lat = (r.x - s.p.x) * s.n.x + (r.z - s.p.z) * s.n.z;
+    if (race.cut && r.finished == null && !window.__autopilot && !window.__kidbot) {
+        // the winner's trackside shot has begun and you can't see out of your own car for a moment: it is carried
+        // straight on to the line, where it is on the road, with the power on (nothing about its speed or grip changes)
+        const keep = Math.max(-(s.hw - 1.6), Math.min(s.hw - 1.6, lat)), aim = pathAt(s.d + 12 + r.v * 0.25, keep, 0);
+        steerIn = Math.max(-1, Math.min(1, wrapAngle(Math.atan2(-(aim.z - r.z), aim.x - r.x) - r.heading) * 3)); gas = true; brake = false;
+    }
     const playerGrip = P.grip * 1.3;                        // arcade grip: more forgiving than the rivals
     if (help && !auto && go) {
         // driving help 1: ease off before a corner you're going too fast for
@@ -1018,6 +1030,10 @@ function finishRace() {
     clearTimeout(flashTimer); document.getElementById('race-flash').classList.remove('show');
     race.results = classify();
     const pos = race.results.findIndex(row => row.k === 0) + 1;
+    // a win: the trackside camera by the flag shows you crossing the line (it has usually begun a moment before the
+    // line: see winCut), and the results wait until it is over
+    if (pos === 1 && !race.cut) startCut();
+    if (race.cut) { if (pos === 1) { race.cut.end = race.cut.t + CUT_AFTER; race.podiumAt += CUT_AFTER; } else endCut(); }
     const medal = ['🥇 Gold', '🥈 Silver', '🥉 Bronze'][pos - 1] || '';
     const medals = store('medals', {}), key = TRACK.id + '_' + difficulty, prev = medals[key];
     if (pos <= 3 && (!prev || pos < prev)) { medals[key] = pos; storeSet('medals', medals); }
@@ -1037,7 +1053,7 @@ function finishRace() {
     if (C && C.onFinish && !race.reported) { race.reported = true; try { C.onFinish(race.results.map(row => ({ team: row.teamIdx, total: row.total, best: row.best }))); } catch (e) { console.error(e); } }
     const el = document.getElementById('race-result'); el.className = 'race-panel';
     const laps = `${raceLaps()} lap${raceLaps() === 1 ? "" : "s"}`, gained = C && C.points ? C.points[pos - 1] || 0 : 0;
-    const kicker = C ? `Round ${C.round} of ${C.of} · ${TRACK.name} · ${laps}` : `${TRACK.name} · ${laps} · ${difficulty}`, title = pos === 1 ? 'You win!' : `You finished ${ordinal(pos)}`;
+    const kicker = C ? `Round ${C.round} of ${C.of} · ${TRACK.name} · ${laps}` : `${TRACK.name} · ${laps} · ${difficulty}`, title = pos === 1 ? `<span class="win-title">${winFlag()}<span>You win!</span>${winFlag(true)}</span>` : `You finished ${ordinal(pos)}`;
     const actions = C ? '<button class="big-btn" data-race="next">🏆 Standings</button><button class="act-btn" data-race="replay">🎬 Watch replay</button>'
         : '<button class="big-btn" data-race="again">Race again</button><button class="act-btn" data-race="replay">🎬 Watch replay</button><button class="act-btn ghost" data-race="menu">Menu</button>';
     const extra = (medal ? `<p class="rr-medal">${medal}</p>` : '') + (C ? `<p class="rr-points">${gained ? `+${gained} point${gained === 1 ? '' : 's'}` : 'No points this time'}</p>` : '')
@@ -1047,7 +1063,69 @@ function finishRace() {
     el.innerHTML = `<div class="rr-box champ-box"><span class="kicker">${kicker}</span><h2>${title}</h2>${race.sheet.extra}
         <table class="champ-table"><thead><tr><th></th><th>Driver</th><th>Race time</th><th>Best lap</th>${C && C.points ? '<th>Points</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>
         <div class="rr-actions">${actions}${PODIUM_BTN}</div></div>`;
-    el.hidden = false;
+    el.hidden = !!race.cut;   // (a winner's results come up when the trackside shot is over: see cutFrame)
+}
+
+// =====================================================================
+//  THE CHEQUERED FLAG (see flag.js for the marshal, the pole and the cloth)
+//  It waves from the moment the leader starts the last lap (race.flagFrom) until the cars go up on the podium, with a
+//  livelier wave for a second as each car takes it (race.flagFor). A replay waves it at the same moments, from those
+//  same times. In qualifying it waves as you come to the end of your flying lap. A time trial has no flag.
+//  If you WIN, the picture cuts to a low trackside camera beside the marshal for about two seconds, to show your car
+//  flashing past the flag. No other finishing place gets the cut.
+// =====================================================================
+const CUT_AFTER = 1.15, CUT_BEFORE = 0.85, CUT_LONGEST = 3.2;   // seconds the shot stays after the line; about how long before the line it begins; the longest it can wait for you to reach the line
+function flagFrame(dt) {
+    if (!flagPost || !race) return;
+    let wave = false, taken = false;
+    if (mode === 'race' && race.flagFrom != null && !(race.podium && !race.replay)) {
+        const now = race.replay ? race.tapeTimes[0] + race.replay.t : race.raceTime;
+        wave = now >= race.flagFrom;
+        for (const t of race.flagFor) if (now >= t && now < t + 1.1) { taken = true; break; }
+    } else if (mode === 'quali') wave = !!player && player.lap === 0 && player.idx > N * 0.8;
+    flagPost.update(dt, wave, taken, camera.position);
+}
+// Are you about to win? On the last lap, in the lead, and less than a second from the line: the shot begins.
+function winCut() {
+    const r = player;
+    if (mode !== 'race' || race.cut || race.phase !== 'go' || race.pit || r.finished != null || r.lap !== raceLaps() - 1 || !r.half || r.idx < N * 0.9) return;
+    const left = trackLen - samples[r.idx].d;
+    if (r.v < 12 || left > Math.max(14, Math.min(95, r.v * CUT_BEFORE))) return;
+    const mine = progressOf(r); for (const o of rivals) if (o.finished != null || progressOf(o) >= mine) return;
+    startCut();
+}
+function startCut() {
+    if (!flagPost || !flagPost.group.visible || window.__noCut) return;   // (__noCut: testing only)
+    race.cut = { t: 0, end: null, saveCam: camMode, look: new THREE.Vector3() };
+    camMode = 0; applyCameraView();                                    // (seen from outside, whatever view you chose)
+    cutCamera(0, true);
+}
+// the shot is over (or the race is being left): your own camera comes back, and a winner's results come up
+function endCut(show = true) {
+    if (!race || !race.cut) return;
+    camMode = race.cut.saveCam; race.cut = null;
+    if (player) { applyCameraView(); placeCamera(true); }
+    if (show && race.phase === 'done' && !race.podium && !race.replay) document.getElementById('race-result').hidden = false;
+}
+// the trackside camera: fixed just inside the barrier across the road from the marshal, above the cars. It looks back
+// across the road, half way between your car and the flag, so the car comes into the picture under the waving flag
+// and flashes past.
+const cutAim = new THREE.Vector3();
+function cutCamera(dt, snap = false) {
+    const K = race.cut, F = flagPost.layout, r = player, s = samples[0];
+    // (how far along the road the car is from the camera: the look only follows it from 35 m away to 2 m short of the
+    // camera, so the car leaves the picture at speed instead of spinning the camera round after it)
+    const fx = Math.cos(s.heading), fz = -Math.sin(s.heading), along = (r.x - F.cam.x) * fx + (r.z - F.cam.z) * fz, hold = Math.max(-35, Math.min(-2, along)) - along;
+    cutAim.set(r.x + fx * hold, r.y + 0.7, r.z + fz * hold).lerp(F.look, camera.aspect < 1 ? 0.75 : 0.6);   // (an upright phone's picture is narrow: it keeps nearer the flag)
+    cutAim.y = Math.max(cutAim.y, F.look.y - 1.7);   // (never so low that the top of the flag is cut off)
+    if (snap) K.look.copy(cutAim); else K.look.lerp(cutAim, Math.min(1, dt * 9));
+    camera.position.copy(F.cam); camera.lookAt(K.look); camera.fov = F.fov; camera.updateProjectionMatrix();
+    camPos.copy(camera.position); camLook.copy(K.look);
+}
+function cutFrame(dt) {
+    const K = race.cut; K.t += dt;
+    if (K.end != null ? K.t >= K.end : K.t > CUT_LONGEST) { endCut(); return false; }
+    cutCamera(dt); return true;
 }
 
 // =====================================================================
@@ -1158,7 +1236,7 @@ function podiumFrame(dt) {
     camPos.copy(camera.position); camLook.copy(podiumLook);
     followSun(P.x, P.z, P.y); tunnelLight(dt, 0); world.update(dt);
     if (weather) weather.update(dt, camera.position, 0, 0);
-    efx.update(dt); drawConfetti(P, dt);
+    efx.update(dt); drawConfetti(P, dt); flagFrame(dt);
     drawFrame();
 }
 
@@ -1192,6 +1270,7 @@ function buildTvCams() {
 function startReplay() {
     if (!race || !race.tape || race.tape.length < 20) return;
     if (!tvCams) buildTvCams();
+    endCut(false);
     race.replay = { t: 0, shot: -1, shotT: 0, cam: null, saveCam: camMode, hit: 0 };
     if (window.stopLongSounds) window.stopLongSounds();
     camMode = 0; applyCameraView();
@@ -1269,7 +1348,7 @@ function replayFrame(dt) {
     } else if (R.shotT > 5.5) nextShot(R);
     placeReplayCamera(SHOTS[R.shot % SHOTS.length], R, dt);
     [player, ...rivals].forEach(c => { c.sliding = false; c.onGrass = false; });
-    followSun(); tunnelLight(dt); world.update(dt); updateEffects(dt); drawMap();
+    followSun(); tunnelLight(dt); world.update(dt); updateEffects(dt); drawMap(); flagFrame(dt);
     document.getElementById('race-hud').innerHTML = '';
     drawFrame();
 }
@@ -1650,7 +1729,7 @@ function gridFrame(dt) {
     if (G.t >= GRID_CAM_TIME) endGridCam(); else placeGridCam(dt);
     updateEngine();
     followSun(camLook.x, camLook.z, player.y);          // (the shadows follow what the camera is looking at, not your car at the back)
-    world.update(dt); updateEffects(dt);
+    world.update(dt); updateEffects(dt); flagFrame(dt);
     hud(); drawMap();
     drawFrame();
     // (while the picture is still held, the pictures that have arrived are all made ready at once: one big one alone can take
@@ -1679,7 +1758,7 @@ function updateEffects(dt) {
     }
     if (weather) weather.update(dt, camera.position, r.v * fwdX, r.v * fwdZ);
     efx.update(dt); dmg.update(dt);
-    efx.drawSpeedLines(r.v / r.perf.vmax, r.slip || r.boostOn, dt);
+    efx.drawSpeedLines(race.cut ? 0 : r.v / r.perf.vmax, !race.cut && (r.slip || r.boostOn), dt);   // (none from the trackside camera)
     efx.lensDrops(dt, weatherKind === 'rain' && camMode < 2);
     if (headlight && headlight.visible) {
         headlight.position.set(r.x + fwdX * 1.8, r.y + 1.0, r.z + fwdZ * 1.8);
@@ -1746,7 +1825,9 @@ function frame(now) {
     if (mode === 'trial' && race.phase === 'go') updateGhost();
     if (race.pit) pitFrame();
     if (mode === 'quali') { if (race.phase !== 'go') return; updateGhost(); }   // (your flying lap has just ended: the grid's table is up)
-    updateCars(dt); placeCamera(false, dt); updateEngine();
+    updateCars(dt); winCut();
+    if (!race.cut || !cutFrame(dt)) placeCamera(false, dt);   // (a winner's finish is shown from the trackside camera by the flag)
+    updateEngine(); flagFrame(dt);
     followSun(); tunnelLight(dt); world.update(dt); watchFrameRate(dt);
     updateEffects(dt);
     hud(); showBoosts(); pitHint(); drawMap(); cornerNames();
@@ -1851,7 +1932,7 @@ function showStage() {
 function showMenu() {
     const finished = !!(race && race.phase === 'done');   // (leaving after the finish, or giving up part-way)
     if (window.stopLongSounds) window.stopLongSounds();
-    stopEngine(); leavePodium(); endGridCam(true); if (race && race.pit) for (const w of race.pit.wheels) if (w) w.visible = true;
+    stopEngine(); leavePodium(); endGridCam(true); endCut(false); if (race && race.pit) for (const w of race.pit.wheels) if (w) w.visible = true;
     race = null; quali = null; closePit(); unlisten(); { const h = document.getElementById('race-pit-hint'); if (h) h.hidden = true; }
     document.getElementById('race-stage').hidden = true;
     document.body.classList.remove('racing');
@@ -1876,6 +1957,7 @@ function loadCircuit(c) {
     tunnelNow = 0; TRACK = c; T = buildTrackData(c); samples = T.samples; N = T.N; trackLen = T.trackLen; tvCams = null;
     world = buildTrack(scene);
     PIT = pitLayout(T, c); pitMarks = buildPitMarks(T, PIT); pitMarks.visible = false; world.group.add(pitMarks);   // (the painted pit box: shown in races that have pit stops)
+    flagPost = buildFlag(T, c, PIT.side); world.group.add(flagPost.group);   // (the marshal with the chequered flag: placed from the start line and the pit wall's side, see flag.js)
     setAtmosphere(c.theme);
     drawMapBase();
 }
@@ -2059,6 +2141,7 @@ export function testHit(k = 0, where = 'front', sev = 0.8, colour = '#FFB300') {
 }
 export function results() { return race && race.results && race.results.map(row => ({ k: row.k, name: row.name, total: row.total, laps: row.laps })); }   // testing only
 export function damageDebug() { return { hits: race ? race.hits.length : 0, ffMs: race && race.ffMs, replayAt: race && race.replay ? [+race.replay.t.toFixed(1), race.replay.hit] : null, cars: [player, ...rivals].map(r => r.damage ? [r.damage.scuffs, r.damage.dents, r.damage.lost, r.damage.chips] : null) }; }   // testing only
+export function flagForTest() { return flagPost && race && { side: flagPost.layout.side, d: flagPost.layout.d, wall: +flagPost.layout.wall.toFixed(2), shown: flagPost.group.visible, waving: +flagPost.waving.toFixed(2), from: race.flagFrom, taken: race.flagFor.length, cut: race.cut ? +race.cut.t.toFixed(2) : null, cam: camMode, wl: +samples[0].wl.toFixed(2), wr: +samples[0].wr.toFixed(2), hw: samples[0].hw }; }   // testing only
 export function testReplay() { if (race && race.tape && race.tape.length >= 20) { startReplay(); return true; } return false; }   // testing only
 
 // testing only: put your car anywhere on the lap (metres from the start line), standing still or moving

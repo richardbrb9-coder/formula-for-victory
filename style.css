@@ -867,3 +867,14 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
 .setup-facts .link-btn.inline, .screen-head .link-btn.inline { min-height: 0; padding: 11px 6px; margin: -11px -6px; }
 @media (max-width: 640px) { .trophy-grid { grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 8px; } .trophy-card .trophy-art { width: 72px; height: 72px; } .rec-grid { grid-template-columns: 1fr; } }
 @media (prefers-reduced-motion: reduce) { .boost-btn.firing, .pit-wheel i, .race-pit-hint.slow { animation: none; } }
+
+/* ---- the chequered flag beside "You win!" (see winFlag in flag.js): thin strips of one chequered picture, each bobbing
+   a moment after the one before, so a wave runs along the cloth. Only 'transform' moves, which costs next to nothing. ---- */
+.win-title { display: inline-flex; align-items: center; justify-content: center; gap: .5em; }
+.win-flag { display: inline-flex; align-items: stretch; height: 1.15em; width: 1.85em; flex: none; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+.win-flag.flip { transform: scaleX(-1); }
+.win-flag .wf-pole { flex: none; width: 3px; margin-bottom: -.55em; border-radius: 2px; background: #c9ced6; }
+.win-flag .wf-s { flex: 1; margin-right: -.5px; background: conic-gradient(#111 25%, #f4f4f0 0 50%, #111 0 75%, #f4f4f0 0) var(--p) 0 / 400% 50%;
+    animation: wf-wave .62s ease-in-out infinite alternate; animation-delay: calc(var(--i) * -.11s); }
+@keyframes wf-wave { from { transform: translateY(calc(var(--i) * -.012em - .02em)); } to { transform: translateY(calc(var(--i) * .012em + .02em)); } }
+@media (prefers-reduced-motion: reduce) { .win-flag .wf-s { animation: none; } }

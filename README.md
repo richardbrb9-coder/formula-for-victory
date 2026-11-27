@@ -21,7 +21,7 @@ works with no internet):
 Once it's installed, open the game while online now and then to pick up new versions.
 
 **Stage 6 (this version):** pit stops with a wheel-changing game in 5-lap races, three overtake boosts a race, a
-trophy cabinet, and a records board for every circuit.
+trophy cabinet, a records board for every circuit, and a marshal waving the chequered flag at the finish.
 **Stage 5:** every driver is shown by name (yours with a small YOU tag), every helmet is painted in
 its team's colours, a race can begin with optional qualifying, and there is a new card game, Driver Cards.
 **Phase 4:** a championship season across all five circuits, a main menu with Championship, Quick
@@ -42,6 +42,7 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 | `records.js` | The records board: your best lap, race and qualifying lap on every circuit, and the Records screen |
 | `trophies.js` | The trophy cabinet: the list of trophies, giving one, the "Trophy won!" message, and the Trophies screen |
 | `pitstop.js` | The pit stop: the PIT box painted on the road, the rivals' bays, the PIT sign, and the wheel-changing game's panel |
+| `flag.js` | The chequered flag: the marshal on a stand by the finish line, the waving cloth, and the little flags beside "You win!" |
 | `season.js` | The championship's rules: the order of the races, the points, the tables, saving and mending a season |
 | `championship.js` | The championship's screens: a new season, the season so far, after each race, the champion |
 | `sound.js` | The volume control every sound goes through, menu taps, countdown beeps, the crowd and the fanfare |
@@ -213,6 +214,34 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
 - A stop is part of the race like any other moment: positions, lap counting, the little map, the replay (the car is
   cleaned at the same moment in the replay) and the working-out of the finishing order all carry on as usual.
 
+## The chequered flag (`flag.js`, `race.js`)
+
+- A marshal in orange overalls and a white helmet with a dark visor (no face) stands on a small raised stand just
+  behind the barrier, holding a big chequered flag on a pole. Everything is made in code: no pictures are loaded.
+- **Where it stands** is worked out from the start line (`flagLayout`): 6 m before the line, on the pit wall's side,
+  0.95 m behind that side's barrier. That is clear of the gantry (on the line), the grid (on the road), the pit box
+  (56 m past the line) and the podium (12 m past it, in the middle of the road). If that side has a tall catch fence
+  there and the other side has none, it stands on the other side.
+- **A new circuit** needs nothing: it follows `pit: { side }`. To move it, add `marshal: { side, at }` to the circuit's
+  data file (`side`: 1 the driver's left, -1 the right; `at`: metres past the start line, a minus number is before
+  it). (Not `flag`: that is already the country's flag.)
+- **When it waves:** from the moment the leader starts the last lap until the cars go up on the podium, with a
+  livelier wave for a second as each car takes the flag. Before that the pole is held upright and the cloth hangs
+  still. In qualifying it waves as you come to the end of your flying lap. A time trial has no flag. In a 1-lap race
+  the first lap is the last, so it waves from the start.
+- **The replay** waves it at the same moments: the race keeps the time the flag came out (`race.flagFrom`) and the
+  time each car took it (`race.flagFor`), and the replay reads the same two.
+- **If you win,** the picture cuts for about two seconds to a low camera across the road from the marshal, to show
+  your car flashing past the flag (`winCut`, `cutCamera`). It begins just under a second before the line, when you
+  are leading on the last lap, and for that moment the car is steered straight on to the line for you. Then your own
+  camera comes back and the results come up. Any other place gets no cut. Nor does qualifying. If a rival gets by
+  in that last second, the cut ends at the line.
+- "You win!" on the results and on the podium has a small waving chequered flag on each side (`winFlag`): twelve
+  thin strips of one picture, moved by CSS `transform` only, and still for anyone who has asked for less motion.
+- Cost: three things to draw (the stand and marshal, the arms and pole, the cloth). The cloth is 104 points moved by
+  a few sums a frame, only while it waves and only within 450 m. At night its white squares glow a little.
+- Testing: `__race.flagForTest()` says where it is and whether it is waving; `__noCut = true` switches the cut off.
+
 ## Trophies (`trophies.js`)
 
 - Kept under `ffv_trophies` as `{ id: when it was won }`. Once won, a trophy is never taken away. Never change a
@@ -275,6 +304,7 @@ Everything starts with `ffv_`. Every one is read carefully: anything missing or 
 4. Write its scenery file, switch it on in `circuits/index.js`, add its files to `sw.js`, and give it a place in the
    season (`ROUNDS` in `season.js`). Its trophy, its place in "World tour" and its records come by themselves from
    the list. Say where its pit box goes with `pit: { side, at }` (see Pit stops), and check it is on a straight.
+   The marshal with the chequered flag places itself from the start line and the pit's side (see The chequered flag).
 5. Give it a `backdrop` (see `monaco.js` and the notes at the top of `backdrop.js`): which sky photo, the colour of the
    haze, its light and colour grade, and the layers of its painted horizon (ridges, woods, fields, a town, the sea,
    by compass bearing). A new sky photo is made with `tools/bake_sky.py` and listed in `SKIES` in `backdrop.js`, in
