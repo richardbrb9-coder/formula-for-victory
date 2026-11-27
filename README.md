@@ -152,7 +152,9 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
   race too, and a good lap can win pole.
 - On Easy the rivals race gently, and at that pace their qualifying laps were 10 to 15 seconds slower than a child's.
   So in qualifying only, the Easy rivals push harder than they race (`QUALI_PACE` in `race.js`): the table looks like a
-  real one, a decent lap still wins pole, and a scruffy one does not. Medium and Hard qualify exactly as they race.
+  real one, a decent lap still wins pole, and a scruffy one does not. Medium and Hard push a little harder in qualifying
+  too (0.905 and 0.975, against 0.88 and 0.96 in the race): with the driving help on, a tidy lap had beaten their poles
+  by eight and three seconds.
 - **Skip qualifying** (on its first panel and on the pause box) puts you at the back, exactly like qualifying off, so
   skipping can never beat driving a lap.
 - The grid flyover and the race then start from those places. "Race again" keeps the same grid.
@@ -188,7 +190,8 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
 
 ## Pit stops (`pitstop.js`, `race.js`)
 
-- Only in 5-lap races (a quick race or a championship set to 5 laps), from lap 2, and never forced.
+- Only in 5-lap races (a quick race or a championship set to 5 laps), from lap 2 to the lap before the last (nobody
+  pits on the last lap), and never forced.
 - The circuits have no pit lane you can drive down (the pit lanes in the scenery are pictures beyond the wall). So the
   **PIT box is painted on the road itself**, at the edge on the pit wall's side, 56 m past the start line: clear of the
   grid (behind the line), the gantry (on the line) and the podium (12 m past it). Three plain bays for the rivals follow
@@ -197,11 +200,16 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
   metres past the start line). Left out, the box goes on the right, 56 m past the line.
 - A "PIT" hint comes up as you approach. Roll into the box at under about 47 mph (`PIT_SPEED`) and the crew catch the
   car. Each of the four wheels takes two taps (old one off, new one on), or keys 1 to 4. The clock runs from the moment
-  you stop to the last wheel; the race clock never stops, so the rivals keep racing.
+  you stop to the last wheel; the race clock never stops, so the rivals keep racing. Half a second after the last wheel
+  the car is let go, and the stop time stays up as you drive off (`PIT_SHOW`).
 - The reward: all three boosts back, and a car that looks like new (crash damage only ever changed its looks).
 - Each rival stops once, on its second, third or fourth lap (shared out so they do not all come in together), for
   2.6 to 4.4 seconds, in the furthest free bay. If every bay is taken it tries again next lap; nobody pits on the last
-  lap. Cars still racing go round a car standing in the pits.
+  lap. Cars still racing go round a car standing in the pits, and on an open circuit a car close behind one slowing
+  into the pits (or pulling out) waits until it can get round, instead of driving through it.
+- Balance: a rival's stop costs it about 10 seconds; a child's stop, with the wheels changed in about four seconds,
+  costs about the same, so pitting keeps your place among the rivals and gives you three boosts. Driving on without
+  stopping is allowed and gains those 10 seconds: a choice, never a punishment.
 - A stop is part of the race like any other moment: positions, lap counting, the little map, the replay (the car is
   cleaned at the same moment in the replay) and the working-out of the finishing order all carry on as usual.
 

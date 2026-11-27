@@ -38,7 +38,7 @@
     // time ever set counts as one).
     function set(id, kind, t) {
         if (!okId(id) || !KINDS.some(k => k[0] === kind) || !okTime(t)) return false;
-        const now = get(id)[kind]; if (now && t >= now.t) return false;
+        const now = get(id)[kind]; if (now && Math.round(t * 100) >= Math.round(now.t * 100)) return false;   // (to the hundredth shown on screen: "New record! 1:38.05" when the old one was 1:38.05 too would puzzle anyone)
         const all = read(); all[id] = all[id] || {}; all[id][kind] = { t, at: Date.now() };
         write(all);
         if (kind === 'lap') { try { localStorage.setItem('ffv_raceBest_' + id, JSON.stringify(t)); } catch (e) { /* storage unavailable */ } }   // (the racing screen's "Best" reads this)
@@ -55,7 +55,7 @@
             el.innerHTML = `<div class="rec-grid">${list.filter(c => !c.soon).map(c => {
                 const r = get(c.id), any = KINDS.some(([k]) => r[k]);
                 return `<div class="panel rec-card ${any ? '' : 'empty'}"><h2><span aria-hidden="true">${c.flag}</span> ${escapeHtml(c.name)}</h2>
-                    <table class="rec-table"><tbody>${KINDS.map(([k, label]) => `<tr class="${r[k] ? '' : 'none'}"><th scope="row">${label}</th><td class="rec-t">${r[k] ? fmtTime(r[k].t) : '–'}</td><td class="rec-d">${r[k] ? escapeHtml(dateText(r[k].at)) : 'Not set yet'}</td></tr>`).join('')}</tbody></table></div>`;
+                    <table class="rec-table"><tbody>${KINDS.map(([k, label]) => `<tr class="${r[k] ? '' : 'none'}"><th scope="row">${label}</th><td class="rec-t">${r[k] ? fmtTime(r[k].t) : '–'}</td><td class="rec-d">${r[k] ? escapeHtml(dateText(r[k].at) || 'Earlier') : 'Not set yet'}</td></tr>`).join('')}</tbody></table></div>`;
             }).join('')}</div>
             <p class="small rec-note">A best lap is one clean flying lap, from the line to the line. Laps with an overtake boost or a pit stop in them don't count, so your time-trial ghost is always a lap you can beat.</p>`;
         }).catch(() => { el.innerHTML = '<p class="small">The records could not load. Check your connection and try again.</p>'; });

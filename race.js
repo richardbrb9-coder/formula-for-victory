@@ -189,7 +189,8 @@ const BOOSTS = 3, BOOST_TIME = 3, BOOST_TOP = 1.07, BOOST_PUSH = 1.45, RIVAL_BOO
 // PIT STOPS (5-lap races only, and never forced): see pitstop.js for the painted box and the wheel-changing game.
 // PIT: where this circuit's box and bays are; PIT_SPEED: the quickest you can be going for the crew to catch the car.
 let PIT = null, pitMarks = null, pitPanel = null;
-const PIT_SPEED = 21, PIT_SHOW = 1.4;             // metres a second (about 47 mph); seconds your stop time stays on screen before you are let go
+const PIT_SPEED = 21, PIT_SHOW = 0.5;             // metres a second (about 47 mph); seconds the four green ticks stay on screen before you are let go (your time then
+                                                  // stays up as you drive away: standing still to read it cost a second and a half the rivals never lose)
 const pitsOpen = () => mode === 'race' && (raceLaps() >= 5 || !!window.__pits);   // (__pits: testing only, pit stops in a shorter race)
 const input = { left: false, right: false, gas: false, brake: false, tilt: 0 };
 // camera views: 0 chase, 1 close chase, 2 bonnet, 3 cockpit (from the driver's seat)
@@ -373,10 +374,12 @@ const validGrid = g => Array.isArray(g) && g.length === TEAMS.length && new Set(
 //  Skipping it puts you at the back of the grid, exactly as if qualifying were switched off.
 // =====================================================================
 const QUALI_RUN = 220, QUALI_TRIES = 2;   // metres before the line that you set off from; how many flying laps you may have
-// How quick the rivals are in qualifying. On Medium and Hard, exactly as quick as they race. On Easy they race gently
+// How quick the rivals are in qualifying: a little quicker than they race (Medium 0.88, Hard 0.96). On Easy they race gently
 // (0.8), and their qualifying laps at that pace were 10 to 15 seconds slower than a child's: nobody would believe the
 // table. So in qualifying the Easy rivals push harder than they race: a decent lap still wins pole, a scruffy one won't.
-const QUALI_PACE = { easy: 0.865 };
+// Medium and Hard push a little harder too (a light touch: with the driving help on, a tidy lap still beat Medium's pole
+// by eight seconds and Hard's by three), so their pole is something to aim for.
+const QUALI_PACE = { easy: 0.865, medium: 0.905, hard: 0.975 };
 // One flying lap by a rival with nobody in the way: the very same sums that drive the rivals in a race (see driveRival),
 // run quickly round two laps. The second lap, started at full speed, is the one that is timed.
 function simLap(factor) {
@@ -620,6 +623,7 @@ function pitCheck(r, lat) {
     const first = !r.inBox; r.inBox = true;
     if (r.finished != null || r.pitLap === r.lap || r.v < 0) return;            // (already stopped on this lap)
     if (r.lap < 1) { if (first && r.v < 45) flash('The pit box opens on lap 2', 1600); return; }
+    if (r.lap >= raceLaps() - 1) { if (first && r.v < 45) flash('Last lap: no time for a pit stop. Go, go, go!', 1600); return; }   // (nobody pits on the last lap: the PIT hint is off by then, and the rivals don't either)
     if (r.v > PIT_SPEED) { if (first && r.v < 45) flash('Too fast for the pit box! Slow right down', 1800); return; }
     startPit();
 }
@@ -647,7 +651,7 @@ function pitTap(i) {
     // all four are on: the stop is timed, and the reward is yours
     P.time = race.raceTime - P.t0; P.leaveAt = race.raceTime + PIT_SHOW;
     const t = P.time, word = t < 3 ? 'lightning stop!' : t < 4.5 ? 'great stop!' : t < 7 ? 'good stop!' : 'wheels on. Off you go!';
-    pitPanel.time(t); pitPanel.result(`${t.toFixed(1)} s, ${word}`);
+    pitPanel.time(t); pitPanel.result(`${t.toFixed(1)} s, ${word}`); P.word = `${t.toFixed(1)} s, ${word}`;
     player.boosts = BOOSTS; player.pitStops++; freshen(player);
     if (soundOn && window.playSound) window.playSound('pitdone');
     if (t < 3) window.FFV.trophies.award('pit_fast');
@@ -658,7 +662,7 @@ function endPit(done) {
     if (!done && P.time != null) return;
     for (const w of P.wheels) if (w) w.visible = true;
     race.pit = null; closePit(); lastHud = '';
-    flash(done ? 'GO! GO! GO!' : 'Back on track', 1200);
+    flash(done ? `${P.word} GO! GO! GO!` : 'Back on track', done ? 2200 : 1200);
 }
 function closePit() { if (pitPanel) pitPanel.close(); const st = document.getElementById('race-stage'); if (st) st.classList.remove('pitting'); }
 // the pit crew have been over a car: it looks as good as new (remembered, so a replay cleans it at the same moment)
@@ -794,6 +798,13 @@ function driveRival(r, dt) {
                 if (gap > 0.5 && Math.abs(player.lastLat - r.lat) < 2.6) target = Math.min(target, Math.max(0, player.v) + Math.max(-5, (gap - 8) * 1.2));
             }
         }
+    }
+    // (on an open circuit the rivals normally pay each other no attention, but a car slowing for the pits, standing in
+    // them or pulling out is a different matter: the car behind steers round it (below) and, until it is past, waits)
+    if (PIT && r.ps && !TRACK.tightWalls && !stopped) {
+        const slow = (d, v, lat) => { const gap = (((d - r.d) % trackLen) + trackLen) % trackLen; if (gap > 0.01 && gap < 18 && Math.abs(lat - r.lat) < 2.6) target = Math.min(target, Math.max(0, v) + Math.max(-5, (gap - 7.5) * 1.2)); };
+        for (const o of rivals) if (o !== r && o.ps && (o.ps.state || race.raceTime < o.ps.out)) slow(o.d, o.v, o.lat);
+        if (race.pit && !race.ff) slow(samples[player.idx].d, 0, player.lastLat);
     }
     let a = 0;
     if (go) a = r.v < target ? P.a0 * (boosting ? RIVAL_BOOST_PUSH : 1) * Math.max(0.1, 1 - (r.v / vm) ** 2) : -P.brake * Math.min(1, (r.v - target) / 3);
@@ -2087,6 +2098,8 @@ export function sceneForTest() { return scene; }   // testing only
 export function pitForTest() { return { open: pitsOpen(), PIT, shown: !!(pitMarks && pitMarks.visible), pit: race && race.pit && { taps: race.pit.taps, time: race.pit.time }, stops: player && player.pitStops, boosts: player && player.boosts, boostT: player && +player.boostT.toFixed(2), used: player && player.boostsUsed, crashed: race && race.crashed,
     rivals: rivals.map(r => r.ps && [r.ps.plan, r.ps.state || (r.ps.done ? 'done' : '-'), r.ps.bay, r.boosts, r.boostOn ? 1 : 0]) }; }   // testing only
 export function pitTapForTest(i) { pitTap(i); }   // testing only
+export function pitOverlapForTest() { let n = 0; for (const a of rivals) for (const b of rivals) if (a !== b && a.ps && (a.ps.state || race.raceTime < a.ps.out) && Math.hypot(a.x - b.x, a.z - b.z) < 1.8) n++; return n; }   // testing only: rivals driving through a car in or near the pits
+export function lapsForTest() { return [player, ...rivals].map(r => ({ laps: r.laps.map(t => +t.toFixed(2)), plan: r.ps ? r.ps.plan : null, lap: r.lap, fin: r.finished })); }   // testing only: every car's lap times
 export function rivalsBoostForTest() { return rivals.map(r => !!r.boostOn); }   // testing only
 export function rivalBoostNow(k = 0) { const r = rivals[k]; if (r) { r.boostT = BOOST_TIME; } return !!r; }   // testing only: make rival k fire a boost
 export function trackForTest() { return T; }   // testing only
