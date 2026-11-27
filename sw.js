@@ -1,4 +1,4 @@
-const CACHE_NAME = 'formula-for-victory-v20'; // Bump this on every change so tablets pick up the new version
+const CACHE_NAME = 'formula-for-victory-v21'; // Bump this on every change so tablets pick up the new version
 const CACHE_PREFIX = 'formula-for-victory-'; // Only this app's own caches are ever deleted: every app on richardbrb9-coder.github.io shares the same cache storage
 
 // Everything is stored inside the app (no CDNs), and all addresses are relative so it works in a GitHub Pages subfolder.
@@ -55,6 +55,9 @@ const CORE_FILES = [
     './circuits/lasvegas.js',
     './circuits/lasvegas.geo.js',
     './circuits/lasvegas-scenery.js',
+    './circuits/jeddah.js',
+    './circuits/jeddah.geo.js',
+    './circuits/jeddah-scenery.js',
     './lib/three.module.min.js',
     './lib/three.core.min.js',
     './lib/three-LICENSE.txt',
@@ -132,7 +135,8 @@ self.addEventListener('activate', (event) => {
 // the tablet straight away. Everything else (code, pictures, sounds, fonts) comes from the saved copy first, for speed.
 const NETWORK_FIRST = ['index.html', 'manifest.json', 'teams.js', 'circuits/index.js', 'circuits/monza.js', 'circuits/monza.geo.js',
     'circuits/silverstone.js', 'circuits/silverstone.geo.js', 'circuits/monaco.js', 'circuits/monaco.geo.js',
-    'circuits/suzuka.js', 'circuits/suzuka.geo.js', 'circuits/lasvegas.js', 'circuits/lasvegas.geo.js'];
+    'circuits/suzuka.js', 'circuits/suzuka.geo.js', 'circuits/lasvegas.js', 'circuits/lasvegas.geo.js',
+    'circuits/jeddah.js', 'circuits/jeddah.geo.js'];
 const NETWORK_TIMEOUT_MS = 4000;
 const ownCache = () => caches.open(CACHE_NAME);   // (never another app's cache)
 

@@ -20,14 +20,17 @@ works with no internet):
 
 Once it's installed, open the game while online now and then to pick up new versions.
 
-**Stage 6 (this version):** pit stops with a wheel-changing game in 5-lap races, three overtake boosts a race, a
+**Stage 7 (this version):** a sixth circuit, Jeddah (a very fast street circuit by the Red Sea, always raced at
+night), deep glossy paint on the cars, and proper racing helmets for the drivers.
+**Stage 6:** pit stops with a wheel-changing game in 5-lap races, three overtake boosts a race, a
 trophy cabinet, a records board for every circuit, and a marshal waving the chequered flag at the finish.
 **Stage 5:** every driver is shown by name (yours with a small YOU tag), every helmet is painted in
 its team's colours, a race can begin with optional qualifying, and there is a new card game, Driver Cards.
-**Phase 4:** a championship season across all five circuits, a main menu with Championship, Quick
+**Phase 4:** a championship season across all the circuits, a main menu with Championship, Quick
 race and Time trial, a How to play screen, Settings (with a volume control), and a crowd, countdown and fanfare made in
-code. The five circuits: Monza, Silverstone, Monaco, Suzuka (a figure of eight: the track crosses over itself on a
-bridge) and Las Vegas (a street circuit, always raced at night).
+code. The six circuits: Monza, Silverstone, Monaco, Suzuka (a figure of eight: the track crosses over itself on a
+bridge), Las Vegas (a street circuit, always raced at night) and Jeddah (the fastest street circuit, by the sea, also
+always at night).
 
 ## How it fits together
 
@@ -56,6 +59,7 @@ bridge) and Las Vegas (a street circuit, always raced at night).
 | `circuits/monaco*.js` | Monaco: the same three files. A hilly street circuit: the town, the casino, the tunnel, the harbour |
 | `circuits/suzuka*.js` | Suzuka: the same three files. A figure of eight in wooded hills: the bridge, gravel traps, the amusement park and its big wheel |
 | `circuits/lasvegas*.js` | Las Vegas: the same three files. A night street circuit: floodlights, glowing towers and made-up neon signs, the giant globe |
+| `circuits/jeddah*.js` | Jeddah: the same three files. A night street circuit by the sea: floodlights, sand, palm trees, a lagoon with a marina, the giant fountain on the skyline |
 | `circuits/common.js` | Scenery parts the newer circuits share: grandstand lists, boards, a pit lane ribbon, the podium stand |
 | `backdrop.js` | The far distance: each circuit's photographed sky, painted horizon, haze, light and colour grade |
 | `tools/bake_sky.py` | Turns a Poly Haven sky photo (.hdr) into the two small pictures the game uses |
@@ -126,8 +130,13 @@ Purple Parrots,Sam Test,12,#6A1B9A,#FFD600,#FFFFFF,lightning,parrots.svg,88,45,2
 
 ## The championship
 
-- Five races in the order set by `ROUNDS` in `season.js` (Monza, Silverstone, Suzuka, Monaco, Las Vegas), each with its
-  own weather (looks only). Points for the top ten: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1 (`POINTS`).
+- Six races in the order set by `ROUNDS` in `season.js` (Monza, Silverstone, Suzuka, Jeddah, Monaco, Las Vegas), each
+  with its own weather (looks only). Points for the top ten: 25, 18, 15, 12, 10, 8, 6, 4, 2, 1 (`POINTS`).
+- **A season keeps the races it was begun with.** One saved when there were five circuits is still five races long: it
+  carries on, finishes and crowns its champion exactly as before, and Jeddah is not slipped into it. Every new season
+  has six. (`check()` keeps a save's own `rounds`; before, it added any missing circuit to the end, which would have
+  turned a finished season back into an unfinished one.) Nothing on the screens says "five": they count the season's
+  own races.
 - The season is saved under `ffv_champ` the moment you cross the line (`onFinish` in `championship.js`). Only the
   finishing orders are saved; points and tables are always worked out again from them, so they can't disagree.
 - A race you leave part-way was never saved, so it starts again from the grid. Recording a race only ever fills in the
@@ -301,7 +310,7 @@ Everything starts with `ffv_`. Every one is read carefully: anything missing or 
 3. Write `circuits/<id>.js` (copy `monza.js`): widths, run-off zones, corner names, and `elevation` if the circuit has
    hills or crosses itself on a bridge (see `monaco.js`: heights in metres at points round the lap, joined by slopes and
    rounded off). A street circuit also sets `tightWalls` (keeps the camera between the walls) and lists its `tunnels`.
-4. Write its scenery file, switch it on in `circuits/index.js`, add its files to `sw.js`, and give it a place in the
+4. Write its scenery file, switch it on in `circuits/index.js` (with `time: 'night'` if it is a night race), add its files to `sw.js`, and give it a place in the
    season (`ROUNDS` in `season.js`). Its trophy, its place in "World tour" and its records come by themselves from
    the list. Say where its pit box goes with `pit: { side, at }` (see Pit stops), and check it is on a straight.
    The marshal with the chequered flag places itself from the start line and the pit's side (see The chequered flag).
@@ -343,15 +352,36 @@ Everything starts with `ffv_`. Every one is read carefully: anything missing or 
 - The scenery's ground must follow both roads. Suzuka's is level with each road beside it, and where two roads are
   close the lower one wins, so it runs in a cutting and the upper one crosses it between concrete walls.
 
-## A night circuit (Las Vegas)
+## A night circuit (Las Vegas, Jeddah)
 
 - `time: 'night'` in the circuit's data makes it a night race, always (the set-up screen shows Day and Sunset greyed
   out). Its `backdrop.looks` are then `night`, `cloudy`, `rain` and `snow`: the same floodlit street under each sky.
+  Say `time: 'night'` in `circuits/index.js` too: the championship's list of races shows a moon for it.
 - No extra lights are used. The two lights every circuit has become a soft white glow from above; the pools of light
   under the floodlights are one see-through layer over the road; buildings are dark with glowing windows (one picture
   for the walls, one for the light they give out); signs and lamps simply glow, and the film effects add the bloom.
 - The horizon's `skyline` layer paints a city of lit towers; `haze` is the glow where the sky meets the city.
 - Every name on every sign is made up (`SIGNS` in `lasvegas-scenery.js`). Never add a real hotel's or company's name.
+
+## Jeddah: the sea, the lagoon and the fountain (`jeddah-scenery.js`)
+
+- **The lap** is nine OpenStreetMap ways joined end to end (`jeddah` in `tools/build_circuit.py`): the full Grand Prix
+  layout, anticlockwise, 6164 m in the game against 6174 m in real life. The file also holds shorter layouts' link
+  roads and chicanes, the pit lane and a kart track, which are left out. The start line is beside the pits, about
+  230 m before the first chicane.
+- **The two halves of the lap run very close together** (35 m apart in places), with the infield always on the
+  driver's left. The lit sand beside each wall never reaches past the middle of the gap (`gapL`).
+- **The land** is laid in strips 12 m wide from the shore inland, broken where the lagoon is, with the water one big
+  sheet underneath. (One big flat shape with a hole in it made long thin slivers, which showed through the road from
+  high above.) The shore follows the most westerly piece of road; the lagoon lies inside the southern loop.
+- **Sand in the dark:** the sand is bright beside the road and fades to the dark land a few metres out. That is
+  painted into its corners' colours, so it costs nothing. Buildings are brightest at street level and darker
+  towards the roof, the same way.
+- **The fountain** is one upright picture, far out at sea, that turns to face you. Its shape is one small picture and
+  the water streaming up it is another, sliding upwards. It is further away than the game draws, so it is drawn
+  nearer and smaller along the same line of sight (`update` at the end of the file). It is a landmark, not a brand.
+- The boats, pontoons, palms, lamps and quay walls are baked into four pieces for the whole circuit. No names
+  anywhere except the made-up boards every circuit shares.
 
 ## Rules for this game
 
@@ -373,4 +403,4 @@ Everything starts with `ffv_`. Every one is read carefully: anything missing or 
 
 Circuit maps © OpenStreetMap contributors (ODbL). three.js (MIT). Fonts under the SIL Open Font Licence. Textures, skies
 and tree models from Poly Haven (CC0). Skies: Kloofendal 43d Clear, Farm Field, Qwantani Late Afternoon and Kloofendal
-Overcast (all Pure Sky versions) by Greg Zaal, Jarod Guest and Dimitrios Savva (Suzuka shares Farm Field; Las Vegas uses the older night sky). Engine recordings from Wikimedia Commons (see the Credits screen for each one).
+Overcast (all Pure Sky versions) by Greg Zaal, Jarod Guest and Dimitrios Savva (Suzuka shares Farm Field; Las Vegas and Jeddah use the older night sky). Engine recordings from Wikimedia Commons (see the Credits screen for each one).

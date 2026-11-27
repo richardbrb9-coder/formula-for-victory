@@ -83,6 +83,21 @@ CIRCUITS = {
         'step': 4, 'smooth': 4,
         'extras': {'pitlane': [[1223479152]]},
     },
+    'jeddah': {
+        'file': 'jeddah.json', 'real_length': 6174,
+        # the Grand Prix lap of the Jeddah Corniche Circuit, anticlockwise: from the last hairpin (at the southern end)
+        # north along the pit straight, through the first chicane, up the coast to the banked turn at the northern end,
+        # and back south beside the sea. (The shorter layouts' link roads and chicanes, the pit lane and the kart track,
+        # whose ways are in the same file, are left out. Every way has the circuit's name, so none is a corner's name.)
+        'lap': [1359884761, 1359884760, 1359884759, 1359884758, 1359884756, 1359884762, 1007989410, 1359884757,
+                1257884699],
+        # the line: beside the pit building, about 230 m before the first chicane (the lap's first way starts at the
+        # exit of the last hairpin, where the pit lane leaves the track)
+        'start': 600,
+        'step': 4, 'smooth': 3,
+        'keep_names': False,
+        'extras': {'pitlane': [[1121870473, 1257884704, 1257884703]]},
+    },
 }
 
 def metres(lat0):

@@ -1,6 +1,6 @@
 // Formula for Victory: the championship's rules and record-keeping (no screens here: see championship.js for those).
 //
-// A season is five races, one on each circuit. Points go to the top ten in each race (nothing for 11th). The same eleven teams and drivers
+// A season is one race on each circuit (six of them now). Points go to the top ten in each race (nothing for 11th). The same eleven teams and drivers
 // (teams.js) race all season; you drive for one of them. The season is saved on the device after every race under
 // 'ffv_champ', so you can stop and carry on another day.
 //
@@ -14,11 +14,14 @@
 (function () {
     const FFV = window.FFV, VERSION = 1, KEY = 'ffv_champ';
     const POINTS = [25, 18, 15, 12, 10, 8, 6, 4, 2, 1];
-    // The order of the season: the fastest, simplest circuit first, the tight streets later, and the night race to finish.
+    // The order of the season: the fastest, simplest circuit first, a night race by the sea in the middle, the tight
+    // streets later, and the night race through the city of lights to finish.
     // The weather is only for looks (the car grips just the same): a grey day in England, a wet one in Japan.
+    // A season that was begun before a circuit was added keeps the races it began with (see check): it is never
+    // made longer part-way through, so a finished season stays finished and its champion stays champion.
     const ROUNDS = [
         { circuit: 'monza', weather: 'sunny' }, { circuit: 'silverstone', weather: 'cloudy' }, { circuit: 'suzuka', weather: 'rain' },
-        { circuit: 'monaco', weather: 'sunny' }, { circuit: 'lasvegas', weather: 'sunny' }
+        { circuit: 'jeddah', weather: 'sunny' }, { circuit: 'monaco', weather: 'sunny' }, { circuit: 'lasvegas', weather: 'sunny' }
     ];
     const LAPS = [2, 3, 5], DIFFICULTIES = ['easy', 'medium', 'hard'];
     const ids = () => FFV.TEAMS.map(t => t.id);
@@ -37,8 +40,9 @@
         const out = newSeason({ team, laps: +s.laps, difficulty: s.difficulty, quali: s.quali });
         if (Number.isFinite(s.started)) out.started = s.started;
         const circuits = ROUNDS.map(r => r.circuit);
-        // (an old save might list the circuits in another order, or fewer of them: keep its order for the ones we still have)
-        if (Array.isArray(s.rounds)) { const kept = s.rounds.filter((c, i) => circuits.includes(c) && s.rounds.indexOf(c) === i); out.rounds = [...kept, ...circuits.filter(c => !kept.includes(c))]; }
+        // (a saved season keeps its own list of races, in its own order: one begun when there were five circuits is still
+        // five races long. Only circuits we still have count; a save with no list at all gets today's full season.)
+        if (Array.isArray(s.rounds)) { const kept = s.rounds.filter((c, i) => circuits.includes(c) && s.rounds.indexOf(c) === i); if (kept.length) out.rounds = kept; }
         if (Array.isArray(s.results)) {
             for (let i = 0; i < s.results.length && i < out.rounds.length; i++) {
                 const r = s.results[i], order = r && Array.isArray(r.order) ? r.order.filter((id, k) => all.includes(id) && r.order.indexOf(id) === k) : null;

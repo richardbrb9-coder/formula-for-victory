@@ -21,7 +21,9 @@ const youOf = (s, id) => id === s.team ? FFV.youTag : '';
 const dot = id => FFV.badge(id);   // (the team's colour dot, or a family's own logo for it: see myteams.js)
 const circuitOf = id => (champCircuits || []).find(c => c.id === id) || { id, name: id, flag: '', country: '' };
 const placeClass = p => p <= 3 ? 'pl' + p : '';
-const weatherFor = (s, i) => { const info = S.roundInfo(s, i), c = circuitOf(s.rounds[i]); return c.id === 'lasvegas' ? '🌙' : WEATHER_ICON[(info && info.weather) || 'sunny']; };
+// (a night race shows the moon, whatever the weather: 'time' is in the list of circuits)
+const NUM_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'], numWord = n => NUM_WORDS[n] || String(n), cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+const weatherFor = (s, i) => { const info = S.roundInfo(s, i), c = circuitOf(s.rounds[i]); return c.time === 'night' ? '🌙' : WEATHER_ICON[(info && info.weather) || 'sunny']; };
 
 // ---------- the tables ----------
 function moveCell(r, show) {
@@ -46,7 +48,7 @@ function tablesPanel(s, opt) {
         ${standingsTable(s, champTab, opt)}
         <p class="small table-note">R1 to R${s.rounds.length} show where each ${champTab === 'teams' ? 'team' : 'driver'} finished in each race.${opt && opt.moves && s.results.length > 1 ? ' <b class="up">▲</b> up and <b class="down">▼</b> down since the race before.' : ''}</p></div>`;
 }
-// the five races: what happened in the ones that are done, and which is next
+// the races: what happened in the ones that are done, and which is next
 function calendar(s) {
     const next = s.results.length;
     return `<ol class="cal">${s.rounds.map((id, i) => {
@@ -89,7 +91,7 @@ function renderChampSetup(el, old) {
     const tmp = S.newSeason({ team: t.id, laps: d.laps, difficulty: d.difficulty, quali: d.quali });
     el.innerHTML = `
         <div class="champ-head"><div><h1><span class="kicker">Championship</span>A new season</h1>
-            <p class="subtitle">Five races, one on each circuit, against the same ten drivers all season. Score points in every race: most points wins the trophy.</p></div></div>
+            <p class="subtitle">${cap(numWord(tmp.rounds.length))} races, one on each circuit, against the same ten drivers all season. Score points in every race: most points wins the trophy.</p></div></div>
         <div class="champ-grid">
             <div class="panel">
                 <p class="b-label" style="margin-top:0">Your team for the season</p>
@@ -107,7 +109,7 @@ function renderChampSetup(el, old) {
                 <p class="small" style="margin-top:10px">${old ? 'Starting a new season wipes the old one.' : 'Your season is saved after every race, so you can stop and carry on another day.'}</p>
             </div>
             <div class="panel">
-                <h2>The five races</h2>
+                <h2>The ${numWord(tmp.rounds.length)} races</h2>
                 ${calendar(tmp)}
                 <h2 class="gap">Points for each race</h2>
                 ${pointsKey()}
@@ -124,7 +126,7 @@ function renderChampHub(el, s) {
             <p class="subtitle">${standingLine(s)} ${s.laps} laps a race, ${s.difficulty} rivals, driving for ${escapeHtml(FFV.teamById(s.team).team)}.${qnote}</p></div>
             <div class="champ-go"><button class="big-btn" data-champ="race">${go}</button></div></div>
         <div class="champ-grid">
-            <div class="panel"><h2>The five races</h2>${calendar(s)}<h2 class="gap">Points for each race</h2>${pointsKey()}</div>
+            <div class="panel"><h2>The ${numWord(s.rounds.length)} races</h2>${calendar(s)}<h2 class="gap">Points for each race</h2>${pointsKey()}</div>
             ${tablesPanel(s, { moves: false })}
         </div>
         <div class="champ-foot"><button class="link-btn" data-champ="new">${champSure ? 'Tap again to wipe this season and start a new one' : 'Start a new season instead'}</button></div>`;

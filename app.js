@@ -92,7 +92,7 @@ document.querySelector('.menu-cards').addEventListener('click', e => {
 // the Championship button says where your season has got to
 function renderTitle() {
     const el = document.getElementById('mc-champ'), S = FFV.season, s = S.load();
-    el.textContent = !s ? 'Five races. One champion.' : S.finished(s) ? 'Season finished: see the final table.' : s.results.length ? `Carry on: race ${s.results.length + 1} of ${s.rounds.length} is next.` : 'Your season is ready: race 1 is next.';
+    el.textContent = !s ? `${['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'][S.ROUNDS.length] || S.ROUNDS.length} races. One champion.` : S.finished(s) ? 'Season finished: see the final table.' : s.results.length ? `Carry on: race ${s.results.length + 1} of ${s.rounds.length} is next.` : 'Your season is ready: race 1 is next.';
     const chip = document.getElementById('chip-trophies'); if (chip) chip.textContent = ` ${FFV.trophies.count()}/${FFV.trophies.total()}`;
     drawTitleArt();
 }
@@ -165,7 +165,7 @@ function renderSetup() {
     const medalFor = k => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[medals[c.id + '_' + k]] || '');
     const km = c.geo.realLength / 1000, len = units === 'mph' ? `${(km * 0.621371).toFixed(2)} miles` : `${km.toFixed(3)} km`;
     const row = (key, list, label) => `<div class="opts">${list.map(([v, text]) => `<button class="opt ${opts[key] === v ? 'active' : ''}" data-opt="${key}" data-val="${v}">${text}</button>`).join('')}</div>`;
-    // a night race (Las Vegas) is always at night: the other times of day are shown, but can't be chosen
+    // a night race (Las Vegas, Jeddah) is always at night: the other times of day are shown, but can't be chosen
     const night = c.time === 'night';
     const timeRow = night ? `<p class="b-label">Time of day</p><div class="opts"><button class="opt" disabled aria-disabled="true">☀️ Day</button><button class="opt" disabled aria-disabled="true">🌇 Sunset</button><button class="opt active locked" disabled aria-pressed="true">🌙 Night</button></div><p class="small opt-note">This race is always at night, under the floodlights.</p>` : '';
     document.getElementById('setup').innerHTML = `
@@ -274,10 +274,10 @@ function renderHelp() {
                 <p>One number is different: for <b>Debut year</b> the <b>earlier</b> year wins. Win all the cards, or have the most when the rounds run out.</p>
                 <p class="small">Your own card also shows what you have won in this game.</p></div>
             <div class="panel help-card wide"><h3>🏆 The championship</h3>
-                <p>A season is <b>five races</b>, one on each circuit, against the same ten drivers. You choose your team, how many laps each race has, and how quick the rivals are. You start every race at the back, unless you switch <b>qualifying</b> on.</p>
+                <p>A season is <b>${['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][window.FFV.season.ROUNDS.length] || window.FFV.season.ROUNDS.length} races</b>, one on each circuit, against the same ten drivers. You choose your team, how many laps each race has, and how quick the rivals are. You start every race at the back, unless you switch <b>qualifying</b> on.</p>
                 <p>The first ten home score points:</p>
                 <div class="points-row">${pts.map((p, i) => `<span class="pt ${i < 3 ? 'p' + (i + 1) : ''}"><small>${i + 1}${['st', 'nd', 'rd'][i] || 'th'}</small><b>${p}</b></span>`).join('')}</div>
-                <p>After each race you see who scored what and how the table has changed: <b class="up">▲</b> means a driver has moved up, <b class="down">▼</b> means down. Most points after five races wins the trophy.</p>
+                <p>After each race you see who scored what and how the table has changed: <b class="up">▲</b> means a driver has moved up, <b class="down">▼</b> means down. Most points after the last race wins the trophy.</p>
                 <p class="small">Your season is saved after every race, so you can stop and carry on another day. If you leave in the middle of a race, that race starts again from the grid.</p></div>
         </div>
         <div class="help-go"><button class="big-btn" data-screen="title">Got it</button></div>`;
@@ -321,7 +321,7 @@ function renderCredits() {
         <h3>3D and fonts</h3>
         <p><b>3D:</b> ${link('https://threejs.org', 'three.js')} © 2010–2025 three.js authors, MIT licence (the full licence is saved inside the game: ${link('lib/three-LICENSE.txt', 'read it')}). <b>Fonts:</b> Orbitron, Russo One and Exo 2, all under the SIL Open Font Licence, saved inside the game.</p>
         <h3>Pictures used on the track</h3>
-        <p><b>Textures</b> (asphalt, grass, sand): CC0 textures by Rob Tuytel and Charlotte Baglioni from ${link('https://polyhaven.com', 'Poly Haven')}. <b>Skies:</b> CC0 photographed skies from Poly Haven: <i>Kloofendal 43d Clear (Pure Sky)</i> by Greg Zaal (Monaco), <i>Farm Field (Pure Sky)</i> by Dimitrios Savva and Jarod Guest (Silverstone and Suzuka), <i>Qwantani Late Afternoon (Pure Sky)</i> by Greg Zaal and Jarod Guest (Monza), <i>Kloofendal Overcast (Pure Sky)</i> by Greg Zaal (grey skies and rain), and sunset and night skies by Greg Zaal, Jarod Guest and Dimitrios Savva (the night sky is the one over Las Vegas). The hills, woods, fields and towns on the horizon are painted by the game. <b>Trees:</b> pictures made in Blender from CC0 tree models from Poly Haven by Rob Tuytel, Rico Cilliers, James Ray Cock and Jenelle van Heerden. The cars, grandstands, pit buildings and everything else are drawn in code or were modelled for Supercar Legends.</p>
+        <p><b>Textures</b> (asphalt, grass, sand): CC0 textures by Rob Tuytel and Charlotte Baglioni from ${link('https://polyhaven.com', 'Poly Haven')}. <b>Skies:</b> CC0 photographed skies from Poly Haven: <i>Kloofendal 43d Clear (Pure Sky)</i> by Greg Zaal (Monaco), <i>Farm Field (Pure Sky)</i> by Dimitrios Savva and Jarod Guest (Silverstone and Suzuka), <i>Qwantani Late Afternoon (Pure Sky)</i> by Greg Zaal and Jarod Guest (Monza), <i>Kloofendal Overcast (Pure Sky)</i> by Greg Zaal (grey skies and rain), and sunset and night skies by Greg Zaal, Jarod Guest and Dimitrios Savva (the night sky is the one over Las Vegas and Jeddah). The hills, woods, fields and towns on the horizon are painted by the game. <b>Trees:</b> pictures made in Blender from CC0 tree models from Poly Haven by Rob Tuytel, Rico Cilliers, James Ray Cock and Jenelle van Heerden. The cars, grandstands, pit buildings and everything else are drawn in code or were modelled for Supercar Legends.</p>
         <h3>Engine sounds</h3>
         <p>Recordings from Wikimedia Commons, cut into short loops: V8: ${link('https://commons.wikimedia.org/wiki/File:Rover-v8-rr79.ogg', 'recording')} by Collard at English Wikipedia, public domain; V10/V12: ${link('https://commons.wikimedia.org/wiki/File:M70.ogg', 'recording')} by Johannes Maximilian, ${link('https://creativecommons.org/licenses/by-sa/4.0/', 'CC BY-SA 4.0')}; high revs: ${link('https://commons.wikimedia.org/wiki/File:Ford_Sierra_RS_Cosworth_(tuned,_about_600_hp)_-_engine_and_exhaust_sound_(YouTube_7e3q50wwmNE).opus', 'recording')} by hggi.car (YouTube), ${link('https://creativecommons.org/licenses/by/3.0/', 'CC BY 3.0')}; start roar: ${link('https://commons.wikimedia.org/wiki/File:Pagani_Zonda_Roadster_F.ogg', 'recording')} by Edvvc, ${link('https://creativecommons.org/licenses/by-sa/3.0/', 'CC BY-SA 3.0')}. The looped versions are shared under the same licences. All the other sounds are made in code.</p>
         <p class="small">Racing here is pretend. On real roads: seat belts on, and leave the racing to the racing drivers.</p>`;
