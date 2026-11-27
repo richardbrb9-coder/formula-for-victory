@@ -89,6 +89,8 @@
                     <button class="menu-card cards" data-menu="cards"><span class="mc-icon" aria-hidden="true">🃏</span><span class="mc-text"><b>Driver Cards</b><small>A card game against the computer.</small></span></button>
                 </nav>
                 <div class="menu-small">
+                    <button class="chip-btn" data-screen="trophies">🏆 Trophies<span id="chip-trophies"></span></button>
+                    <button class="chip-btn" data-screen="records">⏱ Records</button>
                     <button class="chip-btn" data-screen="help">❓ How to play</button>
                     <button class="chip-btn" data-screen="settings">⚙️ Settings</button>
                     <button class="chip-btn" data-screen="credits">📜 Credits</button>
@@ -101,7 +103,7 @@
             <button class="back-btn" data-screen="title">‹ Menu</button>
             <div class="screen-head">
                 <h1><span class="kicker" id="circuits-kicker">Quick race</span>Choose a circuit</h1>
-                <p class="subtitle">Every circuit is traced from a real map, so the corners are where they really are.</p>
+                <p class="subtitle">Every circuit is traced from a real map, so the corners are where they really are. <button class="link-btn inline" data-screen="records">⏱ See your records</button></p>
             </div>
             <div class="circuit-grid" id="circuit-grid"></div>
         </section>
@@ -122,6 +124,22 @@
         <section id="screen-cards" class="screen">
             <button class="back-btn" data-screen="title">‹ Menu</button>
             <div id="cards"></div>
+        </section>
+
+        <!-- TROPHIES: the cabinet (see trophies.js) -->
+        <section id="screen-trophies" class="screen">
+            <button class="back-btn" data-screen="title">‹ Menu</button>
+            <div class="screen-head"><h1><span class="kicker">Trophies</span>Your trophy cabinet</h1>
+                <p class="subtitle">Every trophy you have won is kept here. The grey ones are still to win: each one says how.</p></div>
+            <div id="trophies"></div>
+        </section>
+
+        <!-- RECORDS: your best times on every circuit (see records.js) -->
+        <section id="screen-records" class="screen">
+            <button class="back-btn" data-screen="title" id="records-back">‹ Menu</button>
+            <div class="screen-head"><h1><span class="kicker">Records</span>Your best times</h1>
+                <p class="subtitle">Your quickest lap, race and qualifying lap on every circuit, and the day you set each one.</p></div>
+            <div id="records"></div>
         </section>
 
         <!-- HOW TO PLAY -->
@@ -168,7 +186,8 @@
                 <button class="opt" data-race="pause" aria-label="Pause">❚❚<span> Pause</span></button><button class="opt" id="race-cam" aria-label="Change camera">🎥<span> Camera</span></button><button class="opt" id="race-help" aria-label="Driving help">🛞<span> Driving help</span></button><button class="opt" id="race-tilt" aria-label="Tilt steering">📱<span> Tilt</span></button><button class="opt" id="race-sound" aria-label="Sound">🔊<span> Sound</span></button><button class="opt" id="race-engine" aria-label="Engine sound">🏎️<span> Engine</span></button><button class="opt" id="race-units" aria-label="Switch between mph and km/h">MPH</button>
             </div>
             <div class="pad pad-left"><button class="pad-btn" data-pad="left" aria-label="Steer left">◀</button><button class="pad-btn" data-pad="right" aria-label="Steer right">▶</button></div>
-            <div class="pad pad-right"><button class="pad-btn brake" data-pad="brake" aria-label="Brake">BRAKE</button><button class="pad-btn gas" data-pad="gas" aria-label="Accelerate">GO</button></div>
+            <div class="pad pad-right"><button class="boost-btn" id="race-boost" aria-label="Overtake boost">⚡<b id="race-boost-n">3</b><small>BOOST</small></button><button class="pad-btn brake" data-pad="brake" aria-label="Brake">BRAKE</button><button class="pad-btn gas" data-pad="gas" aria-label="Accelerate">GO</button></div>
+            <div class="race-pit-hint" id="race-pit-hint" hidden></div>
             <div class="race-panel" id="race-pause-panel" hidden><div class="rr-box"><h2>Paused</h2><p class="small" id="race-pause-note" hidden>Your season is saved. If you quit now, this race starts again from the grid next time.</p><div class="rr-actions"><button class="big-btn" data-race="resume">Keep racing</button><button class="act-btn" id="race-qskip" data-race="qskip" hidden>Skip qualifying</button><button class="act-btn ghost" data-race="menu">Quit to menu</button></div></div></div>
             <div class="race-panel" id="race-result" hidden></div>
         </div>
@@ -183,6 +202,8 @@
     <script src="myteams.js"></script>
     <script src="sound.js"></script>
     <script src="season.js"></script>
+    <script src="records.js"></script>
+    <script src="trophies.js"></script>
     <script src="app.js"></script>
     <script src="championship.js"></script>
     <script src="cards.js"></script>

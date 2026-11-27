@@ -96,7 +96,8 @@ function renderChampSetup(el, old) {
                 <div class="team-dots">${teamDots(d.team, 'draft')}</div>
                 <p class="team-name">${teamLine(d.team)}</p>
                 <p class="b-label">Laps in each race</p>
-                ${row('laps', [[2, '2 laps'], [3, '3 laps'], [5, '5 laps']])}
+                ${row('laps', [[2, '2 laps'], [3, '3 laps'], [5, '5 laps 🔧']])}
+                ${d.laps === 5 ? '<p class="small opt-note">5 laps: the pit box is open from lap 2, and the rivals pit too.</p>' : ''}
                 <p class="b-label">Rivals</p>
                 ${row('difficulty', [['easy', 'Easy'], ['medium', 'Medium'], ['hard', 'Hard']])}
                 <p class="b-label">Qualifying before each race</p>
@@ -163,6 +164,7 @@ function celebrateSeason(s, pos) {
     playSound(pos === 1 ? 'fanfare' : pos <= 3 ? 'bigcheer' : 'cheer');
     startParty(pos === 1 ? 9 : pos <= 3 ? 5 : 3, pos === 1 ? 170 : 90);
     if (!s.celebrated) { s.celebrated = true; S.save(s); if (pos === 1) FFV.myStats.add('titles'); }   // (a title for your own Driver Card, counted once)
+    if (pos === 1) FFV.trophies.award('champion');   // (given once: see trophies.js)
     // remember the best you have ever done at each level
     const best = store('champBest', {}) || {}, old = best[s.difficulty];
     if (!Number.isInteger(old) || pos < old) { best[s.difficulty] = pos; storeSet('champBest', best); }

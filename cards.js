@@ -155,6 +155,7 @@
         const you = game.you.length, cpu = game.cpu.length, who = you === cpu ? 'tie' : you > cpu ? 'you' : 'cpu';
         game.over = { who, you, cpu, all: !cpu || !you }; view = 'over'; game.phase = 'over';
         if (who === 'you') storeSet('cardWins', (store('cardWins', 0) | 0) + 1);
+        if (who === 'you') { FFV.trophies.award('cards_win'); if (!cpu) FFV.trophies.award('cards_all'); }   // (the second: the computer has no cards left at all)
         render();
         if (who === 'you') { playSound('fanfare'); if (typeof startParty === 'function') startParty(6, 120); } else playSound(who === 'tie' ? 'go' : 'lose');
     }

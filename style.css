@@ -765,3 +765,97 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
     .dc-seat .dc-stat { padding: 3px 9px; font-size: .84rem; } .dc-seat .dc-stat b { font-size: 1.05rem; } .dc-seat .dc-sl em { flex-basis: 100%; padding-left: 0; }
     .dc-seat-name { display: none; }
 }
+
+/* ---------- Stage 6: the overtake boost, the pit stop, trophies and records ---------- */
+/* the boost button: above the BRAKE pedal, where the right thumb reaches it from GO (the little map is above GO) */
+.boost-btn { position: absolute; left: 4px; bottom: calc(110px + 12px); width: 88px; height: 88px; border-radius: 50%; border: 3px solid #7fe9ff; background: radial-gradient(circle at 50% 38%, rgba(0,229,255,.75), rgba(0,96,160,.72));
+    color: #fff; font-family: var(--display); font-weight: 900; font-size: 1.5rem; line-height: 1; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    text-shadow: 0 1px 4px rgba(0,0,0,.6); box-shadow: 0 0 16px rgba(0,229,255,.55); touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+.boost-on .boost-btn { display: flex; }
+.boost-btn b { font-size: 1.25rem; margin-left: 2px; display: inline; } .boost-btn small { display: block; font-size: .58rem; letter-spacing: .14em; }
+.boost-btn:active { transform: scale(.94); }
+.boost-btn.firing { background: radial-gradient(circle at 50% 38%, #fff, #ffd75e 55%, #ff8a00); border-color: #fff; color: #15171b; text-shadow: none; box-shadow: 0 0 26px rgba(255,215,94,.9); animation: boost-fire .35s ease-in-out infinite alternate; }
+.boost-btn.empty { background: rgba(17,19,23,.6); border-color: rgba(255,255,255,.3); color: rgba(255,255,255,.55); box-shadow: none; }
+@keyframes boost-fire { to { transform: scale(1.07); } }
+@media (max-width: 640px) { .boost-btn { width: 68px; height: 68px; left: 3px; bottom: calc(88px + 10px); font-size: 1.15rem; } .boost-btn b { font-size: 1rem; } .boost-btn small { font-size: .5rem; } }
+@media (max-height: 500px) { .boost-btn { width: 66px; height: 66px; left: 3px; bottom: calc(84px + 8px); font-size: 1.1rem; } .boost-btn b { font-size: 1rem; } .boost-btn small { font-size: .48rem; } }
+/* "PIT": the hint as you come up to the box */
+.race-pit-hint { position: absolute; left: 50%; top: 31%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 18px 9px; pointer-events: none; text-align: center;
+    background: rgba(17,19,23,.78); border: 3px solid #FFC400; border-radius: 12px; font-family: var(--display); color: #fff; max-width: calc(100% - 24px); }
+.race-pit-hint[hidden] { display: none; }
+.race-pit-hint b { font-weight: 900; font-size: clamp(1.4rem, 4vw, 2.2rem); color: #FFC400; letter-spacing: .06em; line-height: 1.1; }
+.race-pit-hint span { font-family: var(--body); font-weight: 700; font-size: .95rem; }
+.race-pit-hint.slow { border-color: var(--red-2); animation: pit-hint .5s ease-in-out infinite alternate; } .race-pit-hint.slow b { color: #fff; }
+@keyframes pit-hint { to { background: rgba(225,6,0,.8); } }
+.podium-on .race-pit-hint, .replaying .race-pit-hint, .pitting .race-pit-hint { display: none; }
+@media (max-height: 500px) { .race-pit-hint { top: 43%; padding: 3px 12px 4px; border-width: 2px; } .race-pit-hint b { font-size: 1.25rem; } .race-pit-hint span { font-size: .78rem; } }   /* (a phone on its side: under the little tower of names) */
+/* the pit stop: your car from above, with a big round button at each wheel */
+.pit-panel { position: absolute; inset: 0; display: grid; place-items: center; padding: 10px; background: rgba(5,6,8,.34); touch-action: none; }
+.pit-panel[hidden] { display: none; }
+.pit-box { display: flex; flex-direction: column; align-items: center; gap: 6px; width: min(430px, 100%); max-height: 100%; padding: 14px 18px 16px; text-align: center; background: linear-gradient(180deg, rgba(27,31,38,.94), rgba(17,19,23,.94)); border: 3px solid #FFC400; border-radius: 18px; box-shadow: 0 14px 40px rgba(0,0,0,.6); }
+.pit-box .kicker { margin: 0; color: #FFC400; }
+.pit-clock { font-family: var(--display); font-weight: 900; font-size: clamp(2.6rem, 9vh, 4.4rem); line-height: 1; color: #fff; font-variant-numeric: tabular-nums; text-shadow: 0 0 18px rgba(255,196,0,.5); }
+.pit-clock small { font-size: .4em; margin-left: 4px; color: #FFC400; }
+.pit-how { margin: 0; min-height: 2.6em; font-weight: 700; font-size: .98rem; line-height: 1.3; color: var(--text); }
+.pit-how.done { font-family: var(--display); font-weight: 900; font-size: 1.35rem; color: var(--lime); }
+.pit-car { position: relative; width: min(300px, 78vw); aspect-ratio: 1 / 1.12; margin: 2px 0 4px; }
+.pit-body { position: absolute; inset: 0; pointer-events: none; }
+.pit-body i { position: absolute; left: 50%; transform: translateX(-50%); background: var(--c1, #E10600); box-shadow: 0 0 0 2px rgba(0,0,0,.45); }
+.pit-nose { top: 3%; width: 9%; height: 30%; border-radius: 40% 40% 6px 6px; }
+.pit-wingf { top: 5%; width: 62%; height: 6%; border-radius: 4px; background: var(--c2, #F4F6F8) !important; }
+.pit-tub { top: 30%; width: 34%; height: 56%; border-radius: 30% 30% 14% 14% / 16% 16% 8% 8%; box-shadow: inset 0 0 0 4px rgba(0,0,0,.25); }
+.pit-tub::after { content: ''; position: absolute; left: 50%; top: 14%; width: 44%; aspect-ratio: 1; transform: translateX(-50%); border-radius: 50%; background: #FFB300; box-shadow: 0 0 0 4px #15171b; }   /* (the driver's helmet, from above) */
+.pit-wingr { bottom: 3%; width: 56%; height: 8%; border-radius: 4px; background: var(--c2, #F4F6F8) !important; }
+.pit-wheel { position: absolute; width: 31%; aspect-ratio: 1; padding: 0; border-radius: 50%; border: 0; background: none; display: grid; place-items: center; touch-action: none; -webkit-touch-callout: none; }
+.pit-wheel.fl { left: 0; top: 13%; } .pit-wheel.fr { right: 0; top: 13%; } .pit-wheel.rl { left: 0; bottom: 9%; } .pit-wheel.rr { right: 0; bottom: 9%; }
+.pit-wheel i { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, #6d6c72 0 17%, #2a2c31 18% 30%, #0b0c0f 31% 62%, #3a3d43 63% 66%, #0b0c0f 67%); box-shadow: 0 0 0 4px #FFC400, 0 0 18px rgba(255,196,0,.55); animation: pit-pulse .7s ease-in-out infinite alternate; }
+.pit-wheel b { position: relative; font-family: var(--display); font-weight: 900; font-size: 1.5rem; color: #fff; text-shadow: 0 2px 5px #000; }
+.pit-wheel:active i { transform: scale(.93); }
+/* the old wheel is off: only the hub is left, waiting for the new one */
+.pit-wheel.off i { background: radial-gradient(circle, #c9ced6 0 14%, #5f6b7a 15% 26%, rgba(0,229,255,.12) 27%); box-shadow: 0 0 0 4px #00E5FF, 0 0 18px rgba(0,229,255,.6); border: 3px dashed rgba(0,229,255,.8); animation: none; }
+.pit-wheel.new i { background: radial-gradient(circle, #dfe5ec 0 17%, #43a047 18% 30%, #15171b 31% 62%, #C6FF00 63% 68%, #15171b 69%); box-shadow: 0 0 0 4px #C6FF00, 0 0 16px rgba(198,255,0,.5); animation: none; }
+.pit-wheel.new b { font-size: 0; } .pit-wheel.new b::after { content: '✓'; font-size: 1.8rem; color: #C6FF00; }
+@keyframes pit-pulse { to { box-shadow: 0 0 0 6px #FFC400, 0 0 26px rgba(255,196,0,.8); } }
+.pit-leave { min-height: 44px; font-size: .85rem; } .pit-leave[hidden] { display: none; }
+.pitting .pad, .pitting .race-slip, .pitting .race-corner { display: none; }
+/* on a wide screen the panel sits to one side (the pit wall's side), so your real car, up on its jacks, and the rivals going by stay in view */
+@media (min-width: 900px) and (min-height: 561px) { .pit-panel { justify-items: end; padding-right: max(3vw, env(safe-area-inset-right)); background: none; } .pit-panel.left { justify-items: start; padding-left: max(3vw, env(safe-area-inset-left)); } .pit-box { width: min(400px, 40vw); } }
+@media (max-height: 560px) {   /* a phone on its side: the clock and the words go beside the car */
+    .pit-box { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "k car" "clock car" "how car" "leave car"; align-items: center; column-gap: 16px; width: min(600px, 100%); padding: 8px 14px; }
+    .pit-box .kicker { grid-area: k; } .pit-clock { grid-area: clock; } .pit-how { grid-area: how; font-size: .86rem; } .pit-leave { grid-area: leave; justify-self: center; }
+    .pit-car { grid-area: car; width: auto; height: min(250px, calc(100vh - 44px)); margin: 0; }
+}
+/* "New record!" on the results */
+.rr-record { margin: 4px 0; font-family: var(--display); font-weight: 900; font-size: 1rem; color: #FFD75E; text-shadow: 0 0 12px rgba(255,215,94,.45); }
+.pod-head .rr-record { font-size: .86rem; margin: 2px 0; }
+/* a trophy has been won: a message that slides down from the top, over whatever is on screen */
+.trophy-toast { position: fixed; left: 50%; top: max(10px, env(safe-area-inset-top)); z-index: 300; transform: translate(-50%, -160%); visibility: hidden; display: flex; align-items: center; gap: 12px; padding: 10px 20px 10px 12px; max-width: calc(100vw - 20px);
+    background: linear-gradient(180deg, #2b2410, #17140a); border: 2px solid #ffd75e; border-radius: 14px; box-shadow: 0 10px 30px rgba(0,0,0,.6), 0 0 24px rgba(255,215,94,.35); transition: transform .3s cubic-bezier(.2,.9,.3,1.2), visibility .3s; pointer-events: none; }
+.trophy-toast.show { transform: translate(-50%, 0); visibility: visible; }
+.trophy-toast .trophy-art { width: 58px; height: 58px; flex: none; }
+.tt-text { display: flex; flex-direction: column; min-width: 0; text-align: left; } .tt-text small { font-family: var(--display); font-weight: 700; font-size: .64rem; letter-spacing: .22em; text-transform: uppercase; color: #ffd75e; }
+.tt-text b { font-family: var(--head); font-weight: 400; font-size: 1.2rem; line-height: 1.15; } .tt-text span { font-size: .82rem; color: var(--muted); line-height: 1.25; }
+/* the trophy cabinet */
+.trophy-count { margin: 0 0 14px; font-family: var(--head); font-size: 1.05rem; color: var(--muted); } .trophy-count b { font-family: var(--display); font-weight: 900; font-size: 1.6rem; color: #ffd75e; margin-right: 2px; }
+.trophy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
+.trophy-card { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 10px 12px; text-align: center; background: linear-gradient(180deg, var(--panel), var(--bg-2)); border: 1px solid var(--line); border-radius: 12px; }
+.trophy-card .trophy-art { width: 92px; height: 92px; }
+.trophy-card b { font-family: var(--head); font-weight: 400; font-size: 1.05rem; line-height: 1.2; }
+.trophy-how { font-size: .82rem; line-height: 1.35; color: var(--muted); } .trophy-how i { font-style: normal; color: var(--cyan); }
+.trophy-card small { font-size: .72rem; color: #ffd75e; font-weight: 700; }
+.trophy-card.won { border-color: rgba(255,215,94,.55); box-shadow: inset 0 0 22px rgba(255,215,94,.08); }
+.trophy-card.locked b { color: var(--muted); } .trophy-art.locked { opacity: .8; }
+/* the records board */
+.rec-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.rec-card h2 { font-size: 1.2rem; margin-bottom: 6px; } .rec-card.empty { opacity: .8; }
+.rec-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.rec-table th { text-align: left; font-weight: 700; padding: 7px 6px 7px 0; color: var(--muted); } .rec-table td { padding: 7px 0 7px 6px; text-align: right; }
+.rec-table tr + tr th, .rec-table tr + tr td { border-top: 1px solid rgba(255,255,255,.08); }
+.rec-t { font-family: var(--display); font-weight: 900; font-size: 1.05rem; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; } .rec-d { font-size: .78rem; color: var(--amber); white-space: nowrap; }
+.rec-table tr.none .rec-t, .rec-table tr.none .rec-d { color: var(--dim); font-family: var(--body); font-weight: 400; }
+.rec-note { margin-top: 14px; max-width: 760px; line-height: 1.5; }
+.circuit-card .cc-best { display: flex; flex-direction: column; gap: 1px; font-size: .84rem; color: var(--amber); font-weight: 700; } .circuit-card .cc-best b { font-family: var(--display); font-weight: 900; font-size: .95rem; color: #fff; }
+.circuit-card .cc-best small { font-weight: 400; font-size: .76rem; color: var(--muted); }
+.setup-facts .link-btn.inline { min-height: 0; }
+@media (max-width: 640px) { .trophy-grid { grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)); gap: 8px; } .trophy-card .trophy-art { width: 72px; height: 72px; } .rec-grid { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .boost-btn.firing, .pit-wheel i, .race-pit-hint.slow { animation: none; } }

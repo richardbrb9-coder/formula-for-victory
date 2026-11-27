@@ -70,6 +70,8 @@ function show(name, extra) {
     if (name === 'setup') renderSetup();
     if (name === 'champ') renderChamp(extra);
     if (name === 'help') renderHelp();
+    if (name === 'trophies') loadCircuits().then(renderTrophies, renderTrophies);   // (the cabinet: see trophies.js; the list of circuits says which "win at ..." trophies there are)
+    if (name === 'records') renderRecords();     // (your best times: see records.js)
     if (name === 'settings') renderSettings();
     if (name === 'teams') FFV.myTeams.render();
     if (name === 'cards' && window.FFVCards) window.FFVCards.open();
@@ -91,6 +93,7 @@ document.querySelector('.menu-cards').addEventListener('click', e => {
 function renderTitle() {
     const el = document.getElementById('mc-champ'), S = FFV.season, s = S.load();
     el.textContent = !s ? 'Five races. One champion.' : S.finished(s) ? 'Season finished: see the final table.' : s.results.length ? `Carry on: race ${s.results.length + 1} of ${s.rounds.length} is next.` : 'Your season is ready: race 1 is next.';
+    const chip = document.getElementById('chip-trophies'); if (chip) chip.textContent = ` ${FFV.trophies.count()}/${FFV.trophies.total()}`;
     drawTitleArt();
 }
 
@@ -99,7 +102,7 @@ function renderTitle() {
 // =====================================================================
 let circuitList = null, chosen = null;          // chosen: { info (from the list), data (the loaded circuit) }
 const loaded = {};
-function loadCircuits() { return circuitList ? Promise.resolve(circuitList) : import('./circuits/index.js').then(m => (circuitList = m.CIRCUITS)); }
+function loadCircuits() { return circuitList ? Promise.resolve(circuitList) : import('./circuits/index.js').then(m => { circuitList = m.CIRCUITS; FFV.trophies.setCircuits(circuitList); return circuitList; }); }   // (each circuit in the list has a trophy of its own: see trophies.js)
 function loadCircuit(info) { return loaded[info.id] ? Promise.resolve(loaded[info.id]) : info.load().then(c => (loaded[info.id] = c)); }
 // a circuit's outline, drawn from its centre line (north at the top). crossover: for a track that crosses over itself,
 // which part is the bridge (it is drawn again on top, with a gap in the road beneath it, so you can see which goes over)
@@ -122,13 +125,18 @@ function drawOutline(canvas, geo, size, lineWidth = 4, crossover = null) {
     x.save(); x.translate(sx, sz); x.rotate(Math.atan2(az, ax)); x.fillStyle = '#E10600'; x.fillRect(-2, -lineWidth * 2, 4, lineWidth * 4);
     x.beginPath(); x.moveTo(lineWidth * 5, 0); x.lineTo(lineWidth * 2, -lineWidth * 1.6); x.lineTo(lineWidth * 2, lineWidth * 1.6); x.fill(); x.restore();
 }
+// a circuit card's line of records: your best lap there, and your best race if you have one
+function bestLine(id) {
+    const r = FFV.records.get(id), race = [r.race3 && `3 laps ${fmtTime(r.race3.t)}`, r.race5 && `5 laps ${fmtTime(r.race5.t)}`].filter(Boolean).join(' · ');
+    return `<span class="cc-best">${r.lap ? `⏱ Best lap <b>${fmtTime(r.lap.t)}</b>` : '⏱ No lap time yet'}${race ? `<small>Best race: ${race}</small>` : ''}</span>`;
+}
 function renderCircuits() {
     const grid = document.getElementById('circuit-grid'), trial = intent === 'trial';
     document.getElementById('circuits-kicker').textContent = trial ? 'Time trial' : 'Quick race';
     loadCircuits().then(list => {
         grid.innerHTML = list.map(c => c.soon
             ? `<div class="circuit-card soon"><span class="cc-soon">COMING SOON</span><div class="cc-map"><span>🔒</span></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)}</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span></div>`
-            : `<button class="circuit-card" data-circuit="${c.id}"><div class="cc-map"><canvas></canvas></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)} · ${c.km.toFixed(3)} km</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span><span class="act-btn cc-go">${trial ? 'Drive here' : 'Race here'}</span></button>`).join('');
+            : `<button class="circuit-card" data-circuit="${c.id}"><div class="cc-map"><canvas></canvas></div><span class="cc-where">${c.flag} ${escapeHtml(c.country)} · ${c.km.toFixed(3)} km</span><b>${escapeHtml(c.name)}</b><span class="cc-blurb">${escapeHtml(c.blurb)}</span>${bestLine(c.id)}<span class="act-btn cc-go">${trial ? 'Drive here' : 'Race here'}</span></button>`).join('');
         for (const c of list) if (!c.soon) loadCircuit(c).then(data => { const cv = grid.querySelector(`[data-circuit="${c.id}"] canvas`); if (cv) drawOutline(cv, data.geo, 120, 3, data.crossover); }).catch(() => { /* its little map is left blank; choosing it tries again */ });
     }).catch(() => { grid.innerHTML = '<p class="small">The circuits could not load. Check your connection and try again.</p>'; });
 }
@@ -152,7 +160,8 @@ function teamDots(active, kind) {
 const teamLine = i => `${escapeHtml(TEAMS[i].team)} <small>car ${TEAMS[i].number}</small>`;
 function renderSetup() {
     if (!chosen) { show('circuits'); return; }
-    const c = chosen.data, best = store('raceBest_' + c.id, null), medals = store('medals', {}), trial = intent === 'trial';
+    const c = chosen.data, rec = FFV.records.get(c.id), best = rec.lap ? rec.lap.t : null, medals = store('medals', {}), trial = intent === 'trial';
+    const raceRec = rec[FFV.records.raceKind(opts.laps)];   // (your best race here over this many laps)
     const medalFor = k => ({ 1: '🥇', 2: '🥈', 3: '🥉' }[medals[c.id + '_' + k]] || '');
     const km = c.geo.realLength / 1000, len = units === 'mph' ? `${(km * 0.621371).toFixed(2)} miles` : `${km.toFixed(3)} km`;
     const row = (key, list, label) => `<div class="opts">${list.map(([v, text]) => `<button class="opt ${opts[key] === v ? 'active' : ''}" data-opt="${key}" data-val="${v}">${text}</button>`).join('')}</div>`;
@@ -165,14 +174,15 @@ function renderSetup() {
             <div class="panel">
                 <div class="setup-map"><canvas id="setup-map"></canvas></div>
                 <p class="small">${escapeHtml(c.about)}</p>
-                <div class="setup-facts"><span>Lap <b>${len}</b></span><span>Your best lap <b>${fmtTime(best)}</b></span></div>
+                <div class="setup-facts"><span>Lap <b>${len}</b></span><span>Your best lap <b>${fmtTime(best)}</b></span>${trial ? '' : `<span>Best ${opts.laps}-lap race <b>${fmtTime(raceRec ? raceRec.t : null)}</b></span>`}${rec.quali && !trial ? `<span>Best qualifying lap <b>${fmtTime(rec.quali.t)}</b></span>` : ''}<button class="link-btn inline" data-screen="records">All records</button></div>
             </div>
             <div class="panel">
                 <p class="b-label" style="margin-top:0">Your team</p>
                 <div class="team-dots">${teamDots(opts.team, 'opt')}</div>
                 <p class="team-name">${teamLine(opts.team)}</p>
                 ${trial ? '' : `<p class="b-label">Race length</p>
-                ${row('laps', [[3, '3 laps'], [5, '5 laps']])}
+                ${row('laps', [[3, '3 laps'], [5, '5 laps 🔧']])}
+                <p class="small opt-note">${opts.laps === 5 ? '5 laps: the pit box is open from lap 2, and the rivals pit too.' : '3 laps: a short race with no pit stops.'}</p>
                 <p class="b-label">Rivals</p>
                 ${row('difficulty', [['easy', 'Easy ' + medalFor('easy')], ['medium', 'Medium ' + medalFor('medium')], ['hard', 'Hard ' + medalFor('hard')]])}`}
                 ${trial ? '' : `<p class="b-label">Qualifying</p>
@@ -237,7 +247,7 @@ function renderHelp() {
                 <p class="small">Like tilting instead? Tap <b>📱 Tilt</b> at the top of the racing screen and steer by tipping the tablet.</p></div>
             <div class="panel help-card"><h3>⌨️ On a laptop</h3>
                 <div class="help-keys" aria-hidden="true"><span><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span><span>or</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></div>
-                <p><b>Up</b> to go, <b>Down</b> or <b>Space</b> to brake, <b>Left</b> and <b>Right</b> to steer. <b>C</b> changes the camera and <b>Esc</b> pauses.</p></div>
+                <p><b>Up</b> to go, <b>Down</b> or <b>Space</b> to brake, <b>Left</b> and <b>Right</b> to steer. <b>B</b> fires an overtake boost. <b>C</b> changes the camera and <b>Esc</b> pauses.</p></div>
             <div class="panel help-card"><h3>🛞 Driving help</h3>
                 <p>Driving help is <b>on</b> when you start. It slows the car in time for each corner and nudges you back onto the road, so you can keep your thumb on GO and enjoy the race.</p>
                 <p>Feeling brave? Tap <b>🛞 Driving help</b> at the top of the racing screen to turn it off. Then the braking is all up to you: brake <b>before</b> the corner, then steer.</p></div>
@@ -247,6 +257,8 @@ function renderHelp() {
                 <p class="small">The other cars' red lights tell you when they are slowing down, too.</p></div>
             <div class="panel help-card"><h3>💨 Racing tips</h3>
                 <p><b>Slipstream:</b> tuck in close behind another car on a straight. It punches a hole in the air and you go faster: the word SLIPSTREAM lights up. Then pull out and pass!</p>
+                <p><b>Overtake boost:</b> tap <b>⚡ BOOST</b> for three seconds of extra speed. You get three in a race, so save them for the straights.</p>
+                <p><b>Pit stop:</b> in a 5-lap race, drive slowly into the yellow PIT box by the start line and tap all four wheels to change them: you get your boosts back and a car that looks like new.</p>
                 <p><b>Stay on the road:</b> grass and gravel slow you right down. <b>🎥 Camera</b> swaps between four views, one from the driver's seat.</p>
                 <p class="small">Rain and grey skies only change how things look. The car grips just the same.</p></div>
             <div class="panel help-card"><h3>🎬 After the flag</h3>
@@ -397,6 +409,7 @@ function drawTitleArt() {
 }
 window.addEventListener('resize', drawTitleArt);
 renderTitle(); if (document.fonts) document.fonts.ready.then(drawTitleArt);
+loadCircuits().then(() => { if (current === 'title') renderTitle(); }).catch(() => { /* no list yet: the circuit trophies show once it has loaded */ });
 // a teams.csv has been loaded: its first team becomes the one you drive for (you can still choose another)
 document.addEventListener('ffv-first-team', () => { opts.team = 0; storeSet('team', 0); if (typeof champDraft !== 'undefined') { champDraft.team = 0; storeSet('champSetup', champDraft); } });
 // a family's own team names or logos have changed (or have just been read): redraw whichever screen shows them
