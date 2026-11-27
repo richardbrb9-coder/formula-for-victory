@@ -286,7 +286,7 @@ export function jeddahScenery(ctx) {
             const { top } = block(blockAt); if (tall && Math.random() < 0.7) crown(blockAt, top, pick(GOLD));
         }
     }
-    for (const q of chunks.values()) { if (q.empty) continue; const m = q.mesh(facade); m.userData.far = 1500; m.userData.noProbe = true; group.add(m); }
+    for (const q of chunks.values()) { if (q.empty) continue; const m = q.mesh(facade); m.userData.far = 1150; m.userData.noProbe = true; group.add(m); }
 
     // =================================================================
     //  PALM TREES: along the sea front, round the lagoon, behind the pits and in the sand between the two halves of the lap

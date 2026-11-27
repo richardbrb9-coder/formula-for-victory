@@ -25,6 +25,7 @@ export const JEDDAH = {
     elevation: null,            // the sea front: flat
     tightWalls: true,           // a street circuit: the camera stays between the walls, and the rivals queue instead of barging
     heliHeight: 46,             // (the helicopter camera in replays flies above the floodlights)
+    roadFar: 1000,              // (the two halves of the lap run side by side, so far-off road is often in view: more than 1000 m away it is deep in the haze and is not drawn. See track.js)
     // between the road and the wall: a metre of asphalt, concrete blocks and a catch fence
     runoff: { w: 1.2, surface: 'asphalt', barrier: 'concrete', fence: true },
     // the pit box painted on the road for 5-lap races (see pitstop.js): on the pit wall's side (1 = the driver's left, -1 = the right), its middle this many metres past the start line
