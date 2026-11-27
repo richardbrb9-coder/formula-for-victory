@@ -4,7 +4,8 @@
 //   getAudio()        the sound system (made on the first tap; null while the app is hidden)
 //   audioOut()        where every sound must be sent (never straight to the speakers), so the volume and mute work
 //   playSound(name)   'click', 'go', 'back', 'rev', 'win', 'lose', 'low', 'high' (countdown), 'cheer', 'bigcheer', 'fanfare',
-//                     'flip' and 'deal' (the Driver Cards)
+//                     'flip' and 'deal' (the Driver Cards), 'whoosh' (the overtake boost), 'gun', 'pit' and 'pitdone'
+//                     (the pit stop), 'trophy' (a trophy won)
 //   stopLongSounds()  cut off a cheer or fanfare that is still playing (leaving a screen, pausing)
 //   FFVSound          { on, volume, setOn(bool), setVolume(1|2|3) }: remembered as ffv_raceSound and ffv_volume
 //
@@ -40,6 +41,9 @@
         try { old.gain.setTargetAtTime(0, ctx.currentTime, 0.04); } catch (e) { /* gone */ }
         setTimeout(() => { try { old.disconnect(); } catch (e) { /* gone */ } }, 400);
     }
+    // When a short sound has finished, unplug it. (A listener that is used once and then taken away by the browser: the
+    // old way, node.onended = ..., left one behind for every beep, pop and cheer ever played.)
+    function whenEnded(node, ...unplug) { node.addEventListener('ended', () => { for (const n of unplug) { try { n.disconnect(); } catch (e) { /* gone */ } } }, { once: true }); }
     function noiseBuf() {
         if (noise) return noise;
         const len = ctx.sampleRate * 2; noise = ctx.createBuffer(1, len, ctx.sampleRate); const d = noise.getChannelData(0);
@@ -51,7 +55,7 @@
         osc.type = type; osc.frequency.setValueAtTime(freq, t); if (to !== freq) osc.frequency.exponentialRampToValueAtTime(to, t + dur);
         gain.gain.setValueAtTime(.0001, t); gain.gain.exponentialRampToValueAtTime(vol, t + attack); gain.gain.exponentialRampToValueAtTime(.0001, t + dur);
         osc.connect(gain); gain.connect(dest); osc.start(t); osc.stop(t + dur + .03);
-        osc.onended = () => { try { gain.disconnect(); } catch (e) { /* gone */ } };
+        whenEnded(osc, gain);
     }
     // a soft swish of air (a card moving): a short burst of noise, sliding from one tone to another
     function swish(dur, from, to, vol, delay = 0) {
@@ -59,7 +63,7 @@
         s.buffer = noiseBuf(); bp.type = 'bandpass'; bp.Q.value = 1.2; bp.frequency.setValueAtTime(from, t); bp.frequency.exponentialRampToValueAtTime(to, t + dur);
         g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.3); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
         s.connect(bp); bp.connect(g); g.connect(master); s.start(t, Math.random() * 1.5, dur + 0.05);
-        s.onended = () => { try { g.disconnect(); } catch (e) { /* gone */ } };
+        whenEnded(s, g);
     }
     // a crowd: a roar of filtered noise that swells and dies away, clapping, and a few whoops. size: 1 normal, 1.5 a big one
     function cheer(size = 1, delay = 0, seconds = 4.2) {
@@ -74,7 +78,7 @@
             g.gain.value = 0; g.gain.setValueCurveAtTime(curve, t0, len);
             bp.frequency.setValueAtTime(f * 0.85, t0); bp.frequency.linearRampToValueAtTime(f * 1.2, t0 + len * 0.3); bp.frequency.linearRampToValueAtTime(f * 0.9, t0 + len);
             s.connect(bp); bp.connect(g); g.connect(out); s.start(t0, Math.random()); s.stop(t0 + len + 0.1);
-            s.onended = () => { try { g.disconnect(); } catch (e) { /* gone */ } };
+            whenEnded(s, g);
         }
         // clapping: lots of tiny bursts
         const claps = Math.round(46 * size);
@@ -83,7 +87,7 @@
             s.buffer = noiseBuf(); hp.type = 'bandpass'; hp.frequency.value = 1400 + Math.random() * 1600; hp.Q.value = 1.4;
             g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.05 * (1 - (at - t0) / len * 0.6), at + 0.002); g.gain.setTargetAtTime(0, at + 0.004, 0.012);
             s.connect(hp); hp.connect(g); g.connect(out); s.start(at, Math.random() * 1.8, 0.09);
-            s.onended = () => { try { g.disconnect(); } catch (e) { /* gone */ } };
+            whenEnded(s, g);
         }
         // whoops: a few voices sliding up
         for (let i = 0; i < Math.round(4 * size); i++) {
@@ -111,8 +115,21 @@
         for (const at of [.54, 1.44]) tone({ freq: 110, to: 52, dur: .5, type: 'sine', vol: .3, delay: at, dest: longBus() });
         cheer(1.5, 1.5, 5);
     }
+    // Sounds are only ever made while the sound system is running. While it is asleep (before the first tap, or just
+    // back from another app or a phone call) nothing made would play, and every beep asked for would wait in a pile and
+    // then all sound at once. So the newest one waits for the system to wake, and is dropped if that takes too long.
+    let waking = null, wanted = null;
     function playSound(name) {
         if (!on || !getAudio()) return;
+        if (ctx.state === 'running') { make(name); return; }
+        wanted = { name, at: performance.now() };
+        if (!waking) {
+            try { waking = ctx.resume(); } catch (e) { waking = null; }
+            if (waking && waking.then) waking.then(() => { waking = null; const w = wanted; wanted = null; if (w && on && ctx.state === 'running' && performance.now() - w.at < 500) make(w.name); }, () => { waking = null; });
+            else waking = null;
+        }
+    }
+    function make(name) {
         switch (name) {
             case 'click': tone({ freq: 620, to: 930, dur: .06, type: 'triangle', vol: .09 }); break;                              // a menu tap
             case 'go':    tone({ freq: 523, dur: .09, type: 'triangle', vol: .1 }); tone({ freq: 784, dur: .14, type: 'triangle', vol: .1, delay: .07 }); break;   // a big button
@@ -127,6 +144,14 @@
             case 'high': tone({ freq: 880, dur: .5, type: 'square', vol: .1, attack: .01 }); tone({ freq: 1760, dur: .45, type: 'sine', vol: .05 }); break;     // ... GO!
             case 'flip':  swish(0.16, 900, 3200, 0.16); tone({ freq: 300, to: 520, dur: .09, type: 'triangle', vol: .06, delay: .1 }); break;   // a card turning over
             case 'deal':  for (let i = 0; i < 3; i++) swish(0.07, 1800, 2600, 0.1, i * 0.09); break;                                           // cards sliding across the table
+            // the overtake boost: a rush of air that rises, with a rising note under it
+            case 'whoosh': swish(0.7, 500, 4200, 0.2); swish(0.5, 300, 1800, 0.12, 0.05); tone({ freq: 180, to: 760, dur: .55, type: 'sawtooth', vol: .035 }); break;
+            // the pit stop: the wheel gun's quick zip, the car dropping off its jacks, and a finished stop
+            case 'gun':  tone({ freq: 240, to: 1250, dur: .13, type: 'sawtooth', vol: .07 }); swish(0.13, 2400, 5200, 0.1); break;
+            case 'pit':  tone({ freq: 392, dur: .1, type: 'square', vol: .07 }); tone({ freq: 523, dur: .16, type: 'square', vol: .07, delay: .1 }); break;
+            case 'pitdone': [523, 784, 1047].forEach((f, i) => tone({ freq: f, dur: .16, type: 'triangle', vol: .14, delay: i * .07 })); break;
+            // a trophy: a short bright fanfare (four quick notes and a held one)
+            case 'trophy': [[659, 0, .1], [784, .1, .1], [988, .2, .1], [1319, .3, .45]].forEach(([f, at, d]) => { tone({ freq: f, dur: d, type: 'triangle', vol: .15, delay: at }); tone({ freq: f / 2, dur: d, type: 'square', vol: .04, delay: at }); }); break;
             case 'cheer': cheer(1); break;
             case 'bigcheer': cheer(1.5, 0, 5); break;
             case 'fanfare': fanfare(); break;

@@ -129,22 +129,33 @@ export function mergeStatic(objs) {
     return out;
 }
 // Free CC0 textures from Poly Haven (polyhaven.com), saved in textures/ so they work offline
-const loader = new THREE.TextureLoader(), texCache = {};
+const loader = new THREE.TextureLoader(), imageLoader = new THREE.ImageLoader(), texCache = {}, texCopies = {};
 export let useDetailMaps = true;   // normal maps are skipped on Low quality
 export function setDetail(on) { useDetailMaps = on; }
 export function photoTex(name, kind = 'col') {
     const key = name + kind;
     if (!texCache[key]) {
         // (if a picture can't be loaded, a plain one stands in: a flat surface, or plain white for the tint to colour)
-        const t = loader.load(`textures/${name}_${kind}.webp`, undefined, undefined, () => {
-            const c = document.createElement('canvas'); c.width = c.height = 2; const x = c.getContext('2d'); x.fillStyle = kind === 'nor' ? '#8080ff' : '#ffffff'; x.fillRect(0, 0, 2, 2);
-            t.image = c; t.needsUpdate = true;
-        });
+        // It is also asked for again (twice more, a little later each time, and whenever the connection comes back): one
+        // missed download, on a patchy connection or while the app was still saving its files, no longer leaves the road
+        // flat for the rest of the visit. Every copy of the picture is told when the real one arrives.
+        const url = `textures/${name}_${kind}.webp`; texCopies[key] = []; let tries = 0, arrived = false, asking = false;
+        const standIn = () => { const c = document.createElement('canvas'); c.width = c.height = 2; const x = c.getContext('2d'); x.fillStyle = kind === 'nor' ? '#8080ff' : '#ffffff'; x.fillRect(0, 0, 2, 2); return c; };
+        const again = () => {
+            if (arrived || asking) return; asking = true;
+            imageLoader.load(url, img => { arrived = true; asking = false; t.image = img; t.needsUpdate = true; for (const ref of texCopies[key]) { const c = ref.deref(); if (c) c.needsUpdate = true; } }, undefined, failed);
+        };
+        const failed = () => { asking = false; if (tries++ < 2) setTimeout(again, 2500 * tries); };
+        const t = loader.load(url, () => { arrived = true; }, undefined, () => { t.image = standIn(); t.needsUpdate = true; failed(); });
+        window.addEventListener('online', () => { tries = 0; again(); });   // (one listener for each of the six pictures, for the life of the page)
         t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 8;
         if (kind === 'col') t.colorSpace = THREE.SRGBColorSpace;
         texCache[key] = t;
     }
-    return texCache[key].clone();   // clones share the image, so it's loaded once
+    const copy = texCache[key].clone();   // clones share the image, so it's loaded once
+    // (remembered, without keeping it alive, so it can be told if the picture arrives late: see above)
+    if (typeof WeakRef === 'function') { const list = texCopies[key]; if (list.length > 400) texCopies[key] = list.filter(r => r.deref()); texCopies[key].push(new WeakRef(copy)); }
+    return copy;
 }
 // a material using a photo texture, repeated every 'metres', with an optional colour tint
 export function photoMat(name, rx, ry, tint = 0xffffff, rough = 0.95) {

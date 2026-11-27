@@ -72,10 +72,11 @@ export class RaceSound {
     }
     // a short burst of filtered noise: a pop, a crackle, a "pssh"
     burst(at, { freq = 900, q = 1.2, type = 'bandpass', len = 0.03, vol = 0.2, decay = 0.02 }) {
+        if (this.ctx.state !== 'running') return;   // (asleep: it would never play, only wait in a pile)
         const ctx = this.ctx, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
         s.buffer = this.noise; f.type = type; f.frequency.value = freq; f.Q.value = q;
         g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(vol, at + 0.003); g.gain.setTargetAtTime(0, at + 0.004, decay);
-        s.connect(f); f.connect(g); g.connect(this.out); s.start(at, Math.random() * 1.5, len + decay * 6); s.onended = () => { s.disconnect(); g.disconnect(); };
+        s.connect(f); f.connect(g); g.connect(this.out); s.start(at, Math.random() * 1.5, len + decay * 6); s.addEventListener('ended', () => { s.disconnect(); g.disconnect(); }, { once: true });   // (once: the browser takes the listener away again, so they never pile up)
     }
     // pops and crackles from the exhaust as the engine lifts off at high revs
     crackle(amount) {
