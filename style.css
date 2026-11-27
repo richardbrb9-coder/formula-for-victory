@@ -821,6 +821,7 @@ button.dc-stat:not(:disabled):active { transform: scale(.97); }
 @keyframes pit-pulse { to { box-shadow: 0 0 0 6px #FFC400, 0 0 26px rgba(255,196,0,.8); } }
 .pit-leave { min-height: 44px; font-size: .85rem; } .pit-leave[hidden] { display: none; }
 .pitting .pad, .pitting .race-slip, .pitting .race-corner { display: none; }
+.win-cut .pad, .win-cut .race-pit-hint, .win-cut .race-slip, .win-cut .race-corner { display: none; }   /* the winner's trackside shot: nothing to press */
 /* on a wide screen the panel sits to one side (the pit wall's side), so your real car, up on its jacks, and the rivals going by stay in view */
 @media (min-width: 900px) and (min-height: 561px) { .pit-panel { justify-items: end; padding-right: max(3vw, env(safe-area-inset-right)); background: none; } .pit-panel.left { justify-items: start; padding-left: max(3vw, env(safe-area-inset-left)); } .pit-box { width: min(400px, 40vw); } }
 @media (max-height: 560px) {   /* a phone on its side: the clock and the words go beside the car */

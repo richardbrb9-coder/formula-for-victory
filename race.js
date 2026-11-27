@@ -1099,11 +1099,12 @@ function startCut() {
     race.cut = { t: 0, end: null, saveCam: camMode, look: new THREE.Vector3() };
     camMode = 0; applyCameraView();                                    // (seen from outside, whatever view you chose)
     cutCamera(0, true);
+    document.getElementById('race-stage').classList.add('win-cut');   // (the buttons go while the shot is on: the car is carried to the line)
 }
 // the shot is over (or the race is being left): your own camera comes back, and a winner's results come up
 function endCut(show = true) {
     if (!race || !race.cut) return;
-    camMode = race.cut.saveCam; race.cut = null;
+    camMode = race.cut.saveCam; race.cut = null; document.getElementById('race-stage').classList.remove('win-cut');
     if (player) { applyCameraView(); placeCamera(true); }
     if (show && race.phase === 'done' && !race.podium && !race.replay) document.getElementById('race-result').hidden = false;
 }
