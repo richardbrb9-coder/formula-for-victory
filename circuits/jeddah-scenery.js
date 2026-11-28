@@ -71,16 +71,17 @@ export function jeddahScenery(ctx) {
     for (let j = jb; j >= ja; j--) lagoon.push([lagR[j], Z0 + j * 12]);
     const inLagoon = (x, z) => { const f = (z - Z0) / 12, j = Math.floor(f); if (j < ja || j >= jb) return false; const t = f - j; return x > lagL[j] + (lagL[j + 1] - lagL[j]) * t && x < lagR[j] + (lagR[j + 1] - lagR[j]) * t; };
     const isWater = (x, z, pad = 0) => x < coastX(z) + pad || inLagoon(x, z) || (pad > 0 && [[pad, 0], [-pad, 0], [0, pad], [0, -pad]].some(([a, b]) => inLagoon(x + a, z + b)));
-    // how far the nearest OTHER piece of road is on the driver's left (the two halves of the lap run close together)
-    const gapL = new Float32Array(N).fill(400);
+    // how far the nearest OTHER piece of road is on the driver's left, and on the right (the two halves of the lap run
+    // close together, and the chicanes fold the road back beside itself)
+    const gapL = new Float32Array(N).fill(400), gapR = new Float32Array(N).fill(400);
     for (let i = 0; i < N; i += 2) {
-        const s = samples[i]; let best = 400;
+        const s = samples[i]; let bl = 400, br = 400;
         for (let j = 0; j < N; j += 2) {
             if (Math.abs(wrapD((j - i) * T.ds, L)) < 160) continue;
-            const q = samples[j].p, dx = q.x - s.p.x, dz = q.z - s.p.z; if (Math.abs(dx) > best || Math.abs(dz) > best) continue;
-            if (dx * s.n.x + dz * s.n.z > 0) best = Math.min(best, Math.hypot(dx, dz));
+            const q = samples[j].p, dx = q.x - s.p.x, dz = q.z - s.p.z, far = Math.max(bl, br); if (Math.abs(dx) > far || Math.abs(dz) > far) continue;
+            const h = Math.hypot(dx, dz); if (dx * s.n.x + dz * s.n.z > 0) bl = Math.min(bl, h); else br = Math.min(br, h);
         }
-        gapL[i] = gapL[(i + 1) % N] = best;
+        gapL[i] = gapL[(i + 1) % N] = bl; gapR[i] = gapR[(i + 1) % N] = br;
     }
 
     // --- the land (dark beyond the lights), with the lagoon cut out of it, and the water under everything ---
@@ -127,22 +128,27 @@ export function jeddahScenery(ctx) {
         const sand = SC.photoMat('coast_sand_01', 1, 1, 0xffffff); sand.vertexColors = true;
         const kMax = i => { let k = 0; for (let j = -6; j <= 6; j++) k = Math.max(k, Math.abs(samples[(i + j + N) % N].k)); return k; };
         const paved = [0.5, 0.48, 0.45], lit = [0.92, 0.84, 0.7], dark = [0.04, 0.034, 0.028];
-        // (how far out each strip may reach: not over the middle of the gap to the other half of the lap, and little on the inside of a tight corner)
+        // (how far out each strip may reach: to the middle of the gap to the other half of the lap, where it meets that
+        // half's sand, and less on the inside of a tight corner. Returns [how far, how dark its far edge is, 0 to 1].)
+        // Where two strips meet in the middle, their edges stay half lit (both halves of the lap have lamps), so no dark
+        // seam runs between them; on the inside of a tight corner the sand still darkens at its edge, but only as far as
+        // a full-width strip would have got by then, so it never ends in a hard step against the dark ground.
         const reach = (s, i, side) => {
-            const wall = wallOf(s, side); let out = wall + PAVE + VERGE;
-            if (side > 0) out = Math.min(out, gapL[i] / 2 - 0.2);
-            if (Math.sign(s.ks) === side) out = Math.min(out, Math.max(wall + 0.6, 0.82 / Math.max(kMax(i), 1e-4)));
-            return Math.max(out, wall + 0.6);
+            const wall = wallOf(s, side), pv = wall + PAVE; let out = pv + VERGE, dim = 1;
+            const gap = (side > 0 ? gapL : gapR)[i]; if (gap / 2 + 0.5 < out) { out = gap / 2 + 0.5; dim = 0.45; }   // (a little past the middle, so the two overlap and no crack shows)
+            if (Math.sign(s.ks) === side) { const tight = Math.max(wall + 0.6, 0.86 / Math.max(kMax(i), 1e-4)); if (tight < out) { out = tight; dim = 1; } }
+            out = Math.max(out, wall + 0.6);
+            return [out, Math.min(1, (out - Math.min(out, pv)) / VERGE) * dim];
         };
         for (let i0 = 0; i0 < N; i0 += 400) {
             const g = new Geo(3), i1 = Math.min(N, i0 + 400);
             for (const side of [1, -1]) {
                 let prev = -1;
                 for (let i = i0; i <= i1; i += 2) {
-                    const s = samples[i % N], wall = wallOf(s, side), out = reach(s, i % N, side), pv = Math.min(out, wall + PAVE), base = g.count, fade = Math.min(1, (out - pv) / VERGE);
+                    const s = samples[i % N], wall = wallOf(s, side), [out, fade] = reach(s, i % N, side), pv = Math.min(out, wall + PAVE), base = g.count;
                     const end = lit.map((v, k) => v + (dark[k] - v) * fade);
                     // across: the pavement, its kerb, then the sand running out into the dark
-                    for (const [off, h, col] of [[wall + 0.2, 0.13, paved], [pv, 0.13, paved], [pv, LAND + 0.05, lit], [out, LAND + 0.03, end]]) {
+                    for (const [off, h, col] of [[wall + 0.2, 0.13, paved], [pv, 0.13, paved], [pv, LAND + 0.05, lit], [out, LAND + (side > 0 ? 0.03 : 0.042), end]]) {   // (the right-hand strip a hair higher, where two strips overlap)
                         const x = s.p.x + s.n.x * off * side, z = s.p.z + s.n.z * off * side; g.pos.push(x, s.p.y + h, z); g.uv.push(x / 5, z / 5); g.col.push(...col);
                     }
                     if (prev >= 0) g.quadRow(prev, base, 4, side > 0);
