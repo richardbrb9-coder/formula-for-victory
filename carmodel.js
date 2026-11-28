@@ -1272,7 +1272,7 @@ function paintMaterial(design, plain = false, hd = false) {
         m.roughness = gtRough(f); m.clearcoatRoughness = 0.03; horizonShine(m, GT_SHINE.paint);
         const mark = m.map && m.map.userData.gloss;
         if (mark) { m.roughness = DECAL_ROUGH; m.roughnessMap = m.metalnessMap = m.clearcoatMap = mark; }
-        m.userData.coat = { clearcoat: f.clearcoat, mark: mark || null };   // (so setPaintGloss can take the clear coat off and put it back)
+        COATS.set(m, { clearcoat: f.clearcoat, mark: mark || null });   // (so setPaintGloss can take the clear coat off and put it back)
     }
     return m;
 }
@@ -1280,9 +1280,12 @@ function paintMaterial(design, plain = false, hd = false) {
 // tablet. full = true: the whole effect. false: the cheaper version (the same smooth paint, satin stickers and bright
 // line along the flanks, but without the clear coat's own layer of reflections). Racing uses the full effect on every
 // car on High graphics, and on your own car only on Medium and Low (see race.js). Safe to call at any time.
+// (kept beside the material, not in its userData: copying a material copies its userData through JSON, and a picture in
+// there would be turned into a long text of its pixels each time, as the time trial's ghost car is made)
+const COATS = new WeakMap();
 export function setPaintGloss(model, full) {
     for (const k of ['paint', 'paintPlain']) {
-        const m = model && model.mats && model.mats[k], c = m && m.userData.coat; if (!c) continue;
+        const m = model && model.mats && model.mats[k], c = m && COATS.get(m); if (!c) continue;
         const coat = full ? c.clearcoat : 0; if (m.clearcoat === coat) continue;
         m.clearcoat = coat; m.clearcoatMap = full ? c.mark : null; m.needsUpdate = true;
     }
